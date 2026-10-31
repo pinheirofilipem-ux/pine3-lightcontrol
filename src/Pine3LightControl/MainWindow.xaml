@@ -143,7 +143,7 @@
             <TextBlock DockPanel.Dock="Bottom" x:Name="NavFooter" Style="{StaticResource Muted}"
                        FontSize="11" Margin="8,0,0,0" />
             <ListBox x:Name="Nav" SelectionChanged="Nav_SelectionChanged" BorderThickness="0" Background="Transparent">
-                <ListBoxItem Tag="Lights" IsSelected="True">
+                <ListBoxItem Tag="Lights">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xEA80;" Width="28" VerticalAlignment="Center" />
                         <TextBlock Text="Lights" />

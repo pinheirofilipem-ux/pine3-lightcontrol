@@ -43,6 +43,16 @@ jobs:
       - name: Publish
         run: dotnet publish src\Pine3LightControl\Pine3LightControl.csproj -c Release -o dist\app --nologo
 
+      # Abre a app a sério (janela, tray, todas as páginas) e falha se houver exceção
+      - name: Auto-teste da UI
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\app\Pine3LightControl.exe -ArgumentList '--self-test' -PassThru
+          $null = $p.Handle
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "auto-teste não terminou em 2 min" }
+          Get-Content "$env:TEMP\Pine3LightControl-selftest\pine3lightcontrol.log" -ErrorAction SilentlyContinue
+          if ($p.ExitCode -ne 0) { throw "auto-teste falhou (código $($p.ExitCode))" }
+
       - name: Instalador (Inno Setup)
         shell: pwsh
         run: |

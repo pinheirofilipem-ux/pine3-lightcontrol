@@ -27,6 +27,12 @@ public partial class App : Application
         base.OnStartup(e);
         bool minimized = e.Args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
 
+        if (e.Args.Any(a => a.Equals("--self-test", StringComparison.OrdinalIgnoreCase)))
+        {
+            Shutdown(await SelfTestAsync());
+            return;
+        }
+
         // ── Instância única: se já está a correr, pede-lhe para mostrar a janela ──
         _mutex = new Mutex(true, MutexName, out bool first);
         if (!first)
@@ -65,6 +71,56 @@ public partial class App : Application
 
         // Arranque manual abre sempre a janela; com o Windows (--minimized) fica na tray.
         if (!minimized || !config.StartMinimized) ShowMain();
+    }
+
+    /// <summary>
+    /// Auto-teste da UI (corre no CI): constrói a janela com uma luz Bluetooth e uma
+    /// entidade do HA, passa por todas as páginas e sai com 0 (ok) ou 1 (exceção).
+    /// Usa uma pasta de dados temporária, nunca a do utilizador.
+    /// </summary>
+    private async Task<int> SelfTestAsync()
+    {
+        AppPaths.DataDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Pine3LightControl-selftest");
+        try { System.IO.File.Delete(AppPaths.LogFile); } catch { }
+        Exception? uiError = null;
+        DispatcherUnhandledException += (_, ex) => { uiError ??= ex.Exception; ex.Handled = true; };
+        try
+        {
+            Log.Write($"[SelfTest] {typeof(App).Assembly.GetName().Version}");
+            Dpapi.Install();
+            var config = new AppConfig();
+            config.BleDevices.Add(new BleDeviceConfig { Address = "AA:BB:CC:DD:EE:FF", Name = "Test strip", AutoConnect = false });
+            config.HomeAssistant.Entities.Add("light.test");
+            config.HomeAssistant.Token = "token";
+            if (config.HomeAssistant.Token != "token") throw new Exception("DPAPI round-trip failed");
+            config.HomeAssistant.Token = "";
+            Appearance.Apply(config.Appearance);
+
+            Hub = new LightHub(config, d => new WinBleLink(d.Address, d.Name));
+            await Hub.StartAsync();
+            Tray = new TrayIcon(Hub, () => { }, () => { });
+            _main = new MainWindow(Hub);
+            _main.Show();
+            foreach (var tag in _main.PageTags.ToList())
+            {
+                _main.Go(tag);
+                await Task.Delay(300);
+                Log.Write($"[SelfTest] página {tag} ok");
+            }
+            foreach (var l in Hub.Lights) { l.SetPower(true); l.SetBrightness(100); }
+            await Task.Delay(300);
+            _main.CloseForQuit();
+            Tray.Dispose();
+            await Hub.DisposeAsync();
+            if (uiError is not null) throw uiError;
+            Log.Write("[SelfTest] OK");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Write($"[SelfTest] FALHOU: {ex}");
+            return 1;
+        }
     }
 
     public void ShowMain()

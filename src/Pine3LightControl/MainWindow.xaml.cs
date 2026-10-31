@@ -82,6 +82,9 @@ public partial class MainWindow : Window
         _scanTimer.Tick += (_, _) => StopScan();
         _haTimer.Tick += (_, _) => RefreshEntityStates();
 
+        // Só agora: selecionar no XAML dispara o evento durante o InitializeComponent,
+        // antes de as páginas existirem.
+        Nav.SelectedIndex = 0;
         _loading = false;
     }
 
@@ -115,6 +118,7 @@ public partial class MainWindow : Window
 
     private void Nav_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (PageAbout is null) return;   // ainda a construir a janela
         if (Nav.SelectedItem is not ListBoxItem item) return;
         var tag = (string)item.Tag;
         PageLights.Visibility = tag == "Lights" ? Visibility.Visible : Visibility.Collapsed;
@@ -128,7 +132,10 @@ public partial class MainWindow : Window
         if (tag != "Bluetooth") StopScan();
     }
 
-    private void Go(string tag) =>
+    /// <summary>Tags das páginas, pela ordem do menu (usado pelo auto-teste).</summary>
+    internal IEnumerable<string> PageTags => Nav.Items.OfType<ListBoxItem>().Select(i => (string)i.Tag);
+
+    internal void Go(string tag) =>
         Nav.SelectedItem = Nav.Items.OfType<ListBoxItem>().First(i => (string)i.Tag == tag);
 
     private void GoBluetooth_Click(object sender, RoutedEventArgs e) => Go("Bluetooth");
