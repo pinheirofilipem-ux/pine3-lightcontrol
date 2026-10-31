@@ -56,3 +56,5 @@ jobs:
           name: Pine3 Light Control ${{ steps.ver.outputs.version }}
           files: dist/Pine3LightControl-Setup-*.exe
           generate_release_notes: true
+          # Versões 0.x são de teste
+          prerelease: ${{ startsWith(steps.ver.outputs.version, '0.') }}
