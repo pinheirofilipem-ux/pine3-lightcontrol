@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- windows10.0.19041: dá acesso às APIs WinRT de Bluetooth LE (Windows 10 2004+) -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>        <!-- NotifyIcon da tray e ColorDialog -->
+    <ImplicitUsings>disable</ImplicitUsings>       <!-- evita ambiguidades WPF/WinForms -->
+    <Nullable>enable</Nullable>
+    <AssemblyName>Pine3LightControl</AssemblyName>
+    <RootNamespace>Pine3LightControl</RootNamespace>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.1.0</Version>
+    <Product>Pine3 Light Control</Product>
+    <Company>magnificent3</Company>
+    <Copyright>made by magnificent3</Copyright>
+    <!-- Tema Fluent do WPF (ThemeMode) ainda é marcado experimental -->
+    <NoWarn>$(NoWarn);WPF0001;CA1416;WFO0003</NoWarn>
+    <!-- Permite compilar (não correr) em Linux/macOS -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Publicação: pasta self-contained (não precisa de .NET instalado) -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Pine3LightControl.Core\Pine3LightControl.Core.csproj" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\icon.ico" />
+    <Resource Include="Assets\icon.png" />
+    <Resource Include="Assets\icon64.png" />
+  </ItemGroup>
+
+</Project>

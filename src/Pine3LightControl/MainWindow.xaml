@@ -1,0 +1,499 @@
+<Window x:Class="Pine3LightControl.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Pine3LightControl.ViewModels"
+        Title="Pine3 Light Control"
+        Width="1080" Height="740" MinWidth="820" MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Assets/icon.ico">
+
+    <Window.Resources>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,16,10" />
+        </Style>
+        <Style x:Key="RowGlyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource Glyphs}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <!-- Botão redondo de cor (o Background é a cor enviada) -->
+        <Style x:Key="Swatch" TargetType="Button">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Margin" Value="0,0,6,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="B" Background="{TemplateBinding Background}" CornerRadius="13"
+                                BorderThickness="1" BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="B" Property="BorderThickness" Value="2" />
+                                <Setter TargetName="B" Property="BorderBrush" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="B" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ══ Cartão de uma luz ══ -->
+        <DataTemplate x:Key="LightCard" DataType="{x:Type vm:LightVm}">
+            <Border Style="{StaticResource Card}" Width="340" Margin="0,0,12,12" Opacity="{Binding CardOpacity}">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,8">
+                        <CheckBox DockPanel.Dock="Right" IsChecked="{Binding IsOn}" Content="On"
+                                  VerticalAlignment="Center" Margin="8,0,0,0" MinWidth="0"
+                                  IsEnabled="{Binding IsAvailable}"
+                                  Visibility="{Binding HasPower, Converter={StaticResource BoolVis}}" />
+                        <Button DockPanel.Dock="Right" Content="Activate" Click="Activate_Click"
+                                VerticalAlignment="Center" Margin="8,0,0,0" IsEnabled="{Binding IsAvailable}"
+                                Visibility="{Binding IsAction, Converter={StaticResource BoolVis}}" />
+                        <Ellipse Width="16" Height="16" Fill="{Binding PreviewBrush}" VerticalAlignment="Center" Margin="0,0,10,0" />
+                        <StackPanel>
+                            <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock FontFamily="{StaticResource Glyphs}" Text="{Binding SourceGlyph}" FontSize="11"
+                                           Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,5,0" />
+                                <TextBlock Style="{StaticResource Muted}" FontSize="12" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap">
+                                    <Run Text="{Binding SourceText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Status, Mode=OneWay}" />
+                                </TextBlock>
+                            </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <StackPanel IsEnabled="{Binding IsAvailable}">
+                        <!-- Brilho -->
+                        <DockPanel Margin="0,4,0,0" Visibility="{Binding HasBrightness, Converter={StaticResource BoolVis}}">
+                            <TextBlock Style="{StaticResource RowGlyph}" Text="&#xE706;" ToolTip="Brightness" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding BrightnessText}" Width="40" TextAlignment="Right"
+                                       VerticalAlignment="Center" Style="{StaticResource Muted}" />
+                            <Slider Minimum="1" Maximum="100" Value="{Binding Brightness}" VerticalAlignment="Center"
+                                    IsMoveToPointEnabled="True" />
+                        </DockPanel>
+
+                        <!-- Cor -->
+                        <WrapPanel Margin="26,10,0,0" Visibility="{Binding HasColor, Converter={StaticResource BoolVis}}">
+                            <Button Style="{StaticResource Swatch}" Background="#FF0000" Click="Swatch_Click" ToolTip="Red" />
+                            <Button Style="{StaticResource Swatch}" Background="#FF7A00" Click="Swatch_Click" ToolTip="Orange" />
+                            <Button Style="{StaticResource Swatch}" Background="#FFD400" Click="Swatch_Click" ToolTip="Yellow" />
+                            <Button Style="{StaticResource Swatch}" Background="#00FF40" Click="Swatch_Click" ToolTip="Green" />
+                            <Button Style="{StaticResource Swatch}" Background="#00E5FF" Click="Swatch_Click" ToolTip="Cyan" />
+                            <Button Style="{StaticResource Swatch}" Background="#0040FF" Click="Swatch_Click" ToolTip="Blue" />
+                            <Button Style="{StaticResource Swatch}" Background="#8A00FF" Click="Swatch_Click" ToolTip="Purple" />
+                            <Button Style="{StaticResource Swatch}" Background="#FF00B4" Click="Swatch_Click" ToolTip="Pink" />
+                            <Button Style="{StaticResource Swatch}" Background="#FFFFFF" Click="Swatch_Click" ToolTip="White" />
+                            <Button Width="26" Height="26" Padding="0" Margin="0,0,6,6" Click="CustomColor_Click"
+                                    ToolTip="Custom color…" Content="&#xE790;" FontFamily="{StaticResource Glyphs}" FontSize="12" />
+                        </WrapPanel>
+
+                        <!-- Temperatura de cor -->
+                        <DockPanel Margin="0,6,0,0" Visibility="{Binding HasColorTemp, Converter={StaticResource BoolVis}}">
+                            <TextBlock Style="{StaticResource RowGlyph}" Text="&#xE9CA;" ToolTip="Color temperature" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding ColorTempText}" Width="56" TextAlignment="Right"
+                                       VerticalAlignment="Center" Style="{StaticResource Muted}" />
+                            <Slider Minimum="0" Maximum="100" Value="{Binding ColorTemp}"
+                                    VerticalAlignment="Center" IsMoveToPointEnabled="True" />
+                        </DockPanel>
+
+                        <!-- Efeitos -->
+                        <DockPanel Margin="0,8,0,0" Visibility="{Binding HasEffects, Converter={StaticResource BoolVis}}">
+                            <TextBlock Style="{StaticResource RowGlyph}" Text="&#xE945;" ToolTip="Effect" />
+                            <ComboBox ItemsSource="{Binding Effects}" SelectedIndex="{Binding EffectIndex}" MaxDropDownHeight="320" />
+                        </DockPanel>
+
+                        <!-- Velocidade do efeito -->
+                        <DockPanel Margin="0,6,0,0" Visibility="{Binding HasSpeed, Converter={StaticResource BoolVis}}">
+                            <TextBlock Style="{StaticResource RowGlyph}" Text="&#xEC4A;" ToolTip="Effect speed" />
+                            <Slider Minimum="0" Maximum="100" Value="{Binding Speed}" VerticalAlignment="Center" IsMoveToPointEnabled="True" />
+                        </DockPanel>
+
+                        <!-- Canal branco (RGBW) -->
+                        <DockPanel Margin="0,6,0,0" Visibility="{Binding HasWhite, Converter={StaticResource BoolVis}}">
+                            <TextBlock Style="{StaticResource RowGlyph}" Text="&#xE793;" ToolTip="White channel" />
+                            <Slider Minimum="0" Maximum="100" Value="{Binding White}" VerticalAlignment="Center" IsMoveToPointEnabled="True" />
+                        </DockPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ══ Navegação ══ -->
+        <DockPanel Grid.Column="0" Margin="12,16,8,12">
+            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,0,0,20">
+                <Image Source="pack://application:,,,/Assets/icon64.png" Width="32" Height="32"
+                       RenderOptions.BitmapScalingMode="HighQuality" />
+                <TextBlock Text="Pine3 Light Control" FontSize="16" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="10,0,0,0" />
+            </StackPanel>
+            <TextBlock DockPanel.Dock="Bottom" x:Name="NavFooter" Style="{StaticResource Muted}"
+                       FontSize="11" Margin="8,0,0,0" />
+            <ListBox x:Name="Nav" SelectionChanged="Nav_SelectionChanged" BorderThickness="0" Background="Transparent">
+                <ListBoxItem Tag="Lights" IsSelected="True">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xEA80;" Width="28" VerticalAlignment="Center" />
+                        <TextBlock Text="Lights" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem Tag="Bluetooth">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE702;" Width="28" VerticalAlignment="Center" />
+                        <TextBlock Text="Bluetooth" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem Tag="HomeAssistant">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE80F;" Width="28" VerticalAlignment="Center" />
+                        <TextBlock Text="Home Assistant" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem Tag="Settings">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE713;" Width="28" VerticalAlignment="Center" />
+                        <TextBlock Text="Settings" />
+                    </StackPanel>
+                </ListBoxItem>
+                <ListBoxItem Tag="About">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE946;" Width="28" VerticalAlignment="Center" />
+                        <TextBlock Text="About" />
+                    </StackPanel>
+                </ListBoxItem>
+            </ListBox>
+        </DockPanel>
+
+        <!-- ══ Páginas ══ -->
+        <Grid Grid.Column="1" Margin="8,16,16,12">
+
+            <!-- ── Lights ── -->
+            <ScrollViewer x:Name="PageLights" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                            <Button Content="All on" Margin="0,0,8,0" Click="AllOn_Click" />
+                            <Button Content="All off" Click="AllOff_Click" />
+                        </StackPanel>
+                        <TextBlock Text="Lights" Style="{StaticResource PageTitle}" />
+                    </DockPanel>
+
+                    <Border x:Name="LightsEmpty" Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="No lights yet" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                       Text="Add a Bluetooth controller (the ones you use with the LED Hue app), or choose which Home Assistant entities to show here." />
+                            <WrapPanel>
+                                <Button Margin="0,0,8,0" Content="Add Bluetooth controller" Click="GoBluetooth_Click" />
+                                <Button Content="Connect Home Assistant" Click="GoHa_Click" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock x:Name="BleHeader" Text="Bluetooth" Style="{StaticResource CardTitle}" />
+                    <ItemsControl x:Name="BleLightsList" ItemTemplate="{StaticResource LightCard}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <TextBlock x:Name="HaHeader" Text="Home Assistant" Style="{StaticResource CardTitle}" Margin="0,8,0,8" />
+                    <ItemsControl x:Name="HaLightsList" ItemTemplate="{StaticResource LightCard}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ── Bluetooth ── -->
+            <ScrollViewer x:Name="PageBluetooth" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+                    <TextBlock Text="Bluetooth" Style="{StaticResource PageTitle}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Find controllers" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                       Text="Supports the Sperll SP110E / SP105E family (LED Hue app). Close the LED Hue app on your phone first: these controllers accept only one connection at a time." />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button x:Name="ScanButton" Content="Scan" Click="Scan_Click" MinWidth="90" />
+                                <CheckBox x:Name="ScanAll" Content="Show all devices" Margin="16,0,0,0"
+                                          VerticalAlignment="Center" Checked="ScanFilter_Changed" Unchecked="ScanFilter_Changed" />
+                                <TextBlock x:Name="ScanStatus" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="16,0,0,0" />
+                            </StackPanel>
+                            <ListView x:Name="ScanList" MaxHeight="260" BorderThickness="0">
+                                <ListView.View>
+                                    <GridView>
+                                        <GridViewColumn Header="Name" Width="200">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate DataType="{x:Type vm:ScanResultVm}">
+                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                        <GridViewColumn Header="Address" Width="150" DisplayMemberBinding="{Binding Address}" />
+                                        <GridViewColumn Header="Signal" Width="80" DisplayMemberBinding="{Binding Signal}" />
+                                        <GridViewColumn Header="" Width="150" DisplayMemberBinding="{Binding Hint}" />
+                                        <GridViewColumn Header="" Width="90">
+                                            <GridViewColumn.CellTemplate>
+                                                <DataTemplate DataType="{x:Type vm:ScanResultVm}">
+                                                    <Button Content="Add" Click="AddScanned_Click" IsEnabled="{Binding CanAdd}" />
+                                                </DataTemplate>
+                                            </GridViewColumn.CellTemplate>
+                                        </GridViewColumn>
+                                    </GridView>
+                                </ListView.View>
+                            </ListView>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Your controllers" Style="{StaticResource CardTitle}" Margin="0,4,0,8" />
+                    <TextBlock x:Name="BleEmpty" Style="{StaticResource Muted}" Margin="0,0,0,12"
+                               Text="None yet. Scan and press Add." />
+                    <ItemsControl x:Name="BleDevicesList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:BleDeviceVm}">
+                                <Border Style="{StaticResource Card}">
+                                    <StackPanel>
+                                        <DockPanel Margin="0,0,0,10">
+                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                                <Button Content="Connect" Margin="0,0,8,0" Click="BleConnect_Click" />
+                                                <Button Content="Disconnect" Margin="0,0,8,0" Click="BleDisconnect_Click" />
+                                                <Button Content="Remove" Click="BleRemove_Click" />
+                                            </StackPanel>
+                                            <StackPanel>
+                                                <TextBlock FontSize="15" FontWeight="SemiBold">
+                                                    <Run Text="{Binding Name, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Address, Mode=OneWay}" FontWeight="Normal" FontSize="12" />
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Status}" Style="{StaticResource Muted}" />
+                                            </StackPanel>
+                                        </DockPanel>
+
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="220" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+
+                                            <TextBlock Text="Name" Style="{StaticResource FieldLabel}" />
+                                            <TextBox Grid.Column="1" Margin="0,0,0,10"
+                                                     Text="{Binding Name, UpdateSourceTrigger=LostFocus}" />
+                                            <Button Grid.Column="2" Content="Write name to controller" Margin="8,0,0,10"
+                                                    HorizontalAlignment="Left" Click="BleRename_Click"
+                                                    ToolTip="Changes the Bluetooth name the controller advertises (ASCII, up to 20 characters)" />
+
+                                            <TextBlock Grid.Row="1" Text="LED chip (IC)" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,10"
+                                                      ItemsSource="{Binding IcModels}" SelectedIndex="{Binding IcModel}" MaxDropDownHeight="320" />
+
+                                            <TextBlock Grid.Row="2" Text="Color order" Style="{StaticResource FieldLabel}" />
+                                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,10"
+                                                      ItemsSource="{Binding RgbOrders}" SelectedIndex="{Binding RgbOrder}" />
+
+                                            <TextBlock Grid.Row="3" Text="Number of LEDs" Style="{StaticResource FieldLabel}" />
+                                            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" Text="{Binding PixelCount}" />
+                                            <Button Grid.Row="3" Grid.Column="2" Content="Send to controller" Margin="8,0,0,10"
+                                                    HorizontalAlignment="Left" Click="BleApplyStrip_Click" />
+
+                                            <StackPanel Grid.Row="4" Grid.ColumnSpan="3">
+                                                <TextBlock Text="{Binding DeviceInfo}" Style="{StaticResource Muted}" Margin="0,0,0,8" />
+                                                <WrapPanel>
+                                                    <CheckBox Content="Connect automatically" IsChecked="{Binding AutoConnect}" Margin="0,0,16,0" />
+                                                    <Button Content="Show GATT services" Click="BleDiagnose_Click"
+                                                            ToolTip="Lists the device's Bluetooth services (for troubleshooting)" />
+                                                </WrapPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border x:Name="DiagCard" Style="{StaticResource Card}" Visibility="Collapsed">
+                        <StackPanel>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="Close" Click="DiagClose_Click" />
+                                <TextBlock Text="Diagnostics" Style="{StaticResource CardTitle}" />
+                            </DockPanel>
+                            <TextBox x:Name="DiagText" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
+                                     TextWrapping="NoWrap" MaxHeight="300" VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ── Home Assistant ── -->
+            <DockPanel x:Name="PageHomeAssistant" Visibility="Collapsed">
+                <TextBlock DockPanel.Dock="Top" Text="Home Assistant" Style="{StaticResource PageTitle}" />
+
+                <Border DockPanel.Dock="Top" Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="Connection" Style="{StaticResource CardTitle}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" MaxWidth="440" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Address" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="HaUrlBox" Grid.Column="1" Margin="0,0,0,10"
+                                     ToolTip="e.g. http://homeassistant.local:8123" />
+                            <TextBlock Grid.Row="1" Text="Access token" Style="{StaticResource FieldLabel}" />
+                            <PasswordBox x:Name="HaToken" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10"
+                                         ToolTip="Home Assistant → your profile → Security → Long-lived access tokens → Create token" />
+                            <Button Grid.Row="1" Grid.Column="2" Content="How to get one" Margin="8,0,0,10" Click="HaTokenHelp_Click" />
+                            <CheckBox x:Name="HaInsecure" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10"
+                                      Content="Accept self-signed certificates (local https)" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Save and connect" Click="HaConnect_Click" Margin="0,0,8,0" />
+                            <Button Content="Test" Click="HaTest_Click" Margin="0,0,8,0" />
+                            <Button Content="Disconnect" Click="HaDisconnect_Click" />
+                        </StackPanel>
+                        <TextBlock x:Name="HaStatus" Style="{StaticResource Muted}" Margin="0,10,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Margin="0">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="What to control" Style="{StaticResource CardTitle}" />
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                   Text="Tick the entities to show on the Lights page and in the tray menu. Lights, switches, input booleans, fans, scenes, scripts and buttons are supported." />
+                        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <ComboBox x:Name="HaDomain" DockPanel.Dock="Right" Width="170" Margin="8,0,0,0"
+                                      SelectionChanged="HaFilter_Changed" />
+                            <CheckBox x:Name="HaOnlySelected" DockPanel.Dock="Right" Content="Only selected" Margin="12,0,0,0"
+                                      VerticalAlignment="Center" Checked="HaFilter_Changed" Unchecked="HaFilter_Changed" />
+                            <TextBox x:Name="HaSearch" TextChanged="HaFilter_Changed" ToolTip="Search by name or entity id" />
+                        </DockPanel>
+                        <TextBlock x:Name="HaListEmpty" DockPanel.Dock="Top" Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                   Text="Connect to Home Assistant to see your entities." />
+                        <DataGrid x:Name="HaEntities" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  CanUserDeleteRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
+                                  SelectionMode="Single" IsReadOnly="False">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Show" Width="60" SortMemberPath="Selected">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type vm:EntityVm}">
+                                            <CheckBox IsChecked="{Binding Selected, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Center" MinWidth="0" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Name" Binding="{Binding Name, Mode=OneWay}" Width="2*" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Entity" Binding="{Binding EntityId, Mode=OneWay}" Width="2*" IsReadOnly="True" />
+                                <DataGridTextColumn Header="Type" Binding="{Binding Domain, Mode=OneWay}" Width="*" IsReadOnly="True" />
+                                <DataGridTextColumn Header="State" Binding="{Binding State, Mode=OneWay}" Width="*" IsReadOnly="True" />
+                                <DataGridTemplateColumn Header="Order" Width="80">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type vm:EntityVm}">
+                                            <StackPanel Orientation="Horizontal"
+                                                        Visibility="{Binding Selected, Converter={StaticResource BoolVis}}">
+                                                <Button Content="&#xE70E;" FontFamily="{StaticResource Glyphs}" FontSize="10"
+                                                        Padding="6,2" Margin="0,0,4,0" Click="HaMoveUp_Click" ToolTip="Move up" />
+                                                <Button Content="&#xE70D;" FontFamily="{StaticResource Glyphs}" FontSize="10"
+                                                        Padding="6,2" Click="HaMoveDown_Click" ToolTip="Move down" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                </Border>
+            </DockPanel>
+
+            <!-- ── Settings ── -->
+            <ScrollViewer x:Name="PageSettings" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+                    <TextBlock Text="Settings" Style="{StaticResource PageTitle}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Appearance" Style="{StaticResource CardTitle}" />
+                            <ComboBox x:Name="AppearanceCombo" Width="260" HorizontalAlignment="Left"
+                                      SelectionChanged="Appearance_Changed">
+                                <ComboBoxItem Tag="System" Content="Follow Windows" />
+                                <ComboBoxItem Tag="Light" Content="Light" />
+                                <ComboBoxItem Tag="Dark" Content="Dark" />
+                            </ComboBox>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Startup" Style="{StaticResource CardTitle}" />
+                            <CheckBox x:Name="StartupCheck" Content="Start with Windows"
+                                      Checked="Startup_Changed" Unchecked="Startup_Changed" Margin="0,0,0,6" />
+                            <CheckBox x:Name="MinimizedCheck" Content="When starting with Windows, stay in the tray"
+                                      Checked="Minimized_Changed" Unchecked="Minimized_Changed" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0"
+                                       Text="Closing the window keeps Pine3 Light Control running in the tray. Use Quit in the tray menu to exit." />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Files" Style="{StaticResource CardTitle}" />
+                            <TextBlock x:Name="DataPath" Style="{StaticResource Muted}" Margin="0,0,0,10" />
+                            <WrapPanel>
+                                <Button Content="Open data folder" Margin="0,0,8,0" Click="OpenData_Click" />
+                                <Button Content="Open log" Click="OpenLog_Click" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ── About ── -->
+            <ScrollViewer x:Name="PageAbout" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+                    <TextBlock Text="About" Style="{StaticResource PageTitle}" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel Orientation="Horizontal">
+                            <Image Source="pack://application:,,,/Assets/icon.png" Width="72" Height="72"
+                                   RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,16,0" />
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Pine3 Light Control" FontSize="20" FontWeight="SemiBold" />
+                                <TextBlock x:Name="AboutVersion" Style="{StaticResource Muted}" />
+                                <TextBlock Text="made by magnificent3" Style="{StaticResource Muted}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="What it does" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Muted}"
+                                       Text="Controls Bluetooth LED controllers from the LED Hue app (Sperll SP110E / SP105E) directly from this PC, and the lights, switches and scenes you choose from Home Assistant — all from one panel and the tray." />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>
