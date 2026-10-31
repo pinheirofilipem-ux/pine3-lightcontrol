@@ -266,6 +266,7 @@ public partial class MainWindow : Window
 
     private void ScanStopped(string? error)
     {
+        if (ScanButton is null) return;   // janela não chegou a ser construída
         _scanTimer.Stop();
         ScanButton.Content = "Scan";
         int hits = _scan.Count(s => s.LooksLikeLedHue);

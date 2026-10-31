@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Pine3LightControl.Core;
 using Pine3LightControl.Core.Bluetooth;
 using Windows.Devices.Bluetooth;
+using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Radios;
 using Windows.Foundation;
@@ -19,7 +20,7 @@ namespace Pine3LightControl.Bluetooth;
 internal sealed class WinBleLink : IBleLink
 {
     /// <summary>Limite por passo: o Windows pode ficar à espera para sempre de um dispositivo.</summary>
-    internal static readonly TimeSpan StepTimeout = TimeSpan.FromSeconds(15);
+    internal static readonly TimeSpan StepTimeout = TimeSpan.FromSeconds(20);
 
     private readonly BleDeviceConfig _cfg;
     private readonly Action _saveConfig;
@@ -82,39 +83,88 @@ internal sealed class WinBleLink : IBleLink
             return false;
         }
 
-        var errors = new List<string>();
-        foreach (var type in AddressTypes(_cfg.AddressType))
+        // 1) O controlador está a anunciar? Se não, quase sempre está ligado ao telemóvel.
+        Step("looking for the controller");
+        var seen = await FindAdvertAsync(ct).ConfigureAwait(false);
+        if (seen is null)
         {
-            ct.ThrowIfCancellationRequested();
-            try
-            {
-                if (await TryConnectAsync(type, ct).ConfigureAwait(false))
-                {
-                    var t = type.ToString();
-                    if (_cfg.AddressType != t)
-                    {
-                        _cfg.AddressType = t;
-                        _saveConfig();
-                    }
-                    Step("connected");
-                    return true;
-                }
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                await CleanupAsync().ConfigureAwait(false);
-                throw;
-            }
-            catch (Exception e)
-            {
-                LastError = e.Message.Split('\n')[0].Trim();
-            }
-            Log.Write($"[BLE] {Label}: falhou com endereço {type}: {LastError}");
-            errors.Add(LastError);
-            await CleanupAsync().ConfigureAwait(false);
+            LastError = "not advertising: probably still connected to the phone (close LED Hue or turn off the phone's Bluetooth), or off / out of range";
+            Log.Write($"[BLE] {Label}: {LastError}");
+            return false;
         }
-        LastError = errors.LastOrDefault() ?? "not found";
+        var type = seen.Value;
+        if (_cfg.AddressType != type.ToString())
+        {
+            _cfg.AddressType = type.ToString();
+            _saveConfig();
+        }
+
+        // 2) Ligar com o tipo de endereço anunciado
+        try
+        {
+            if (await TryConnectAsync(type, ct).ConfigureAwait(false))
+            {
+                Step("connected");
+                return true;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await CleanupAsync().ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception e)
+        {
+            LastError = e.Message.Split('\n')[0].Trim();
+        }
+        Log.Write($"[BLE] {Label}: falhou: {LastError}");
+        await CleanupAsync().ConfigureAwait(false);
         return false;
+    }
+
+    /// <summary>
+    /// Procura o anúncio do controlador (scan ativo, até 8 s). Além de confirmar que está
+    /// disponível, ter um scan ativo ajuda o Windows a estabelecer a ligação.
+    /// </summary>
+    private async Task<BluetoothAddressType?> FindAdvertAsync(CancellationToken ct)
+    {
+        var found = new TaskCompletionSource<BluetoothAddressType>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var w = new BluetoothLEAdvertisementWatcher { ScanningMode = BluetoothLEScanningMode.Active };
+        w.Received += (_, a) => { if (a.BluetoothAddress == _address) found.TrySetResult(a.BluetoothAddressType); };
+        try
+        {
+            w.Start();
+            return await found.Task.WaitAsync(TimeSpan.FromSeconds(8), ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException) { return null; }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // Sem scan (ex.: outro programa a usar o rádio): tenta ligar com o tipo guardado
+            Log.Write($"[BLE] {Label}: scan indisponível: {e.Message}");
+            return _cfg.AddressType == "Random" ? BluetoothAddressType.Random : BluetoothAddressType.Public;
+        }
+        finally
+        {
+            try { w.Stop(); } catch { }
+        }
+    }
+
+    /// <summary>Espera que a sessão GATT fique ativa (o dispositivo aceitou a ligação).</summary>
+    internal static async Task<bool> WaitActiveAsync(GattSession session, TimeSpan timeout, CancellationToken ct)
+    {
+        var active = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        TypedEventHandler<GattSession, GattSessionStatusChangedEventArgs> h = (_, e) =>
+        {
+            if (e.Status == GattSessionStatus.Active) active.TrySetResult(true);
+        };
+        session.SessionStatusChanged += h;
+        try
+        {
+            if (session.SessionStatus == GattSessionStatus.Active) return true;
+            return await active.Task.WaitAsync(timeout, ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException) { return false; }
+        finally { session.SessionStatusChanged -= h; }
     }
 
     private async Task<bool> TryConnectAsync(BluetoothAddressType type, CancellationToken ct)
@@ -138,6 +188,17 @@ internal sealed class WinBleLink : IBleLink
             _session.MaintainConnection = true;
         }
         catch (Exception e) when (e is not OperationCanceledException) { Log.Write($"[BLE] {Label}: GattSession: {e.Message}"); }
+
+        if (_session is not null)
+        {
+            Step("waiting for the controller to accept the connection");
+            if (!await WaitActiveAsync(_session, StepTimeout, ct).ConfigureAwait(false))
+            {
+                LastError = $"the controller didn't accept the connection ({StepTimeout.TotalSeconds:0} s) — is it connected to the phone?";
+                return false;
+            }
+            Log.Write($"[BLE] {Label}: sessão GATT ativa (MTU {_session.MaxPduSize})");
+        }
 
         Step("reading services");
         var sr = await Timed(dev.GetGattServicesForUuidAsync(Sp110e.ServiceUuid, BluetoothCacheMode.Uncached),
@@ -291,6 +352,12 @@ internal static class BleAdapter
                     "opening the device", CancellationToken.None);
                 if (dev is null) { sb.AppendLine("  device not found"); continue; }
                 sb.AppendLine($"  name: {dev.Name}  status: {dev.ConnectionStatus}");
+                using var session = await WinBleLink.Timed(GattSession.FromDeviceIdAsync(dev.BluetoothDeviceId),
+                    "opening the GATT session", CancellationToken.None);
+                session.MaintainConnection = true;
+                var active = await WinBleLink.WaitActiveAsync(session, WinBleLink.StepTimeout, CancellationToken.None);
+                sb.AppendLine($"  GATT session: {session.SessionStatus}{(active ? $" (MTU {session.MaxPduSize})" : " — the device didn't accept the connection")}");
+                if (!active) continue;
                 var sr = await WinBleLink.Timed(dev.GetGattServicesAsync(BluetoothCacheMode.Uncached), "reading services",
                     CancellationToken.None);
                 if (sr.Status != GattCommunicationStatus.Success) { sb.AppendLine($"  services: {sr.Status}"); continue; }
