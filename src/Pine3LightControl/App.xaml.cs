@@ -65,7 +65,7 @@ public partial class App : Application
         config.StartWithWindows = StartupManager.IsEnabled();
         Appearance.Apply(config.Appearance);
 
-        Hub = new LightHub(config, d => new WinBleLink(d.Address, string.IsNullOrWhiteSpace(d.Name) ? d.Address : d.Name));
+        Hub = new LightHub(config, d => new WinBleLink(d, config.Save));
         Tray = new TrayIcon(Hub, ShowMain, Quit);
         await Hub.StartAsync();
 
@@ -96,7 +96,7 @@ public partial class App : Application
             config.HomeAssistant.Token = "";
             Appearance.Apply(config.Appearance);
 
-            Hub = new LightHub(config, d => new WinBleLink(d.Address, d.Name));
+            Hub = new LightHub(config, d => new WinBleLink(d, () => { }));
             await Hub.StartAsync();
             Tray = new TrayIcon(Hub, () => { }, () => { });
             _main = new MainWindow(Hub);

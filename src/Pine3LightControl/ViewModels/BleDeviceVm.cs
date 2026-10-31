@@ -84,6 +84,8 @@ public sealed class ScanResultVm : Observable
     public ScanResultVm(string address) => Address = address;
 
     public string Address { get; }
+    /// <summary>"Public" ou "Random", como o Windows o viu no anúncio.</summary>
+    public string AddressType { get; set; } = "";
     private string _name = "";
     public string Name { get => _name; set { if (Set(ref _name, value)) Raise(nameof(DisplayName)); } }
     private short _rssi;

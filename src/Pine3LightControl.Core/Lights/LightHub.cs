@@ -69,17 +69,28 @@ public sealed class LightHub : IAsyncDisposable
         return light;
     }
 
-    public Sp110eLight AddBleDevice(string address, string name)
+    public Sp110eLight AddBleDevice(string address, string name, string addressType = "")
     {
         var existing = BleLights.FirstOrDefault(l => string.Equals(l.Config.Address, address, StringComparison.OrdinalIgnoreCase));
         if (existing is not null) return existing;
-        var d = new BleDeviceConfig { Address = address.ToUpperInvariant(), Name = name, AutoConnect = true };
+        var d = new BleDeviceConfig { Address = address.ToUpperInvariant(), Name = name, AutoConnect = true, AddressType = addressType };
         Config.BleDevices.Add(d);
         Config.Save();
         var light = AddBle(d, start: true);
         Log.Write($"[BLE] adicionado {name} ({address})");
         ListChanged?.Invoke();
         return light;
+    }
+
+    /// <summary>O scan viu o tipo de endereço de um controlador já adicionado: guarda-o.</summary>
+    public void LearnAddressType(string address, string addressType)
+    {
+        if (addressType is not ("Public" or "Random")) return;
+        var d = Config.BleDevices.FirstOrDefault(x => string.Equals(x.Address, address, StringComparison.OrdinalIgnoreCase));
+        if (d is null || d.AddressType == addressType) return;
+        d.AddressType = addressType;
+        Config.Save();
+        Log.Write($"[BLE] {d.Name}: endereço {addressType}");
     }
 
     public async Task RemoveBleDeviceAsync(Sp110eLight light)

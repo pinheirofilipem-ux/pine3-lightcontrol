@@ -283,6 +283,11 @@ public partial class MainWindow : Window
             _scan.Add(vm);
         }
         if (!string.IsNullOrWhiteSpace(a.Name)) vm.Name = a.Name;
+        if (a.AddressType is "Public" or "Random")
+        {
+            vm.AddressType = a.AddressType;
+            if (vm.Added) _hub.LearnAddressType(a.Address, a.AddressType);
+        }
         vm.Rssi = a.Rssi;
         if (a.HasFfe0) vm.HasFfe0 = true;
         CollectionViewSource.GetDefaultView(_scan).Refresh();
@@ -298,7 +303,7 @@ public partial class MainWindow : Window
     {
         if (Vm<ScanResultVm>(sender) is not { } s) return;
         var name = string.IsNullOrWhiteSpace(s.Name) ? s.Address : s.Name;
-        _hub.AddBleDevice(s.Address, name);
+        _hub.AddBleDevice(s.Address, name, s.AddressType);
         s.Added = true;
     }
 
@@ -349,7 +354,7 @@ public partial class MainWindow : Window
         if (Vm<BleDeviceVm>(sender) is not { } d) return;
         DiagCard.Visibility = Visibility.Visible;
         DiagText.Text = "Reading services…";
-        try { DiagText.Text = await BleAdapter.DescribeAsync(d.Address); }
+        try { DiagText.Text = await BleAdapter.DescribeAsync(d.Address, d.Light.Config.AddressType); }
         catch (Exception ex) { DiagText.Text = ex.Message; }
     }
 

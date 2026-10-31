@@ -19,4 +19,6 @@ public interface IBleLink : IAsyncDisposable
     event Action<byte[]>? Notified;
     /// <summary>A ligação caiu ou foi estabelecida.</summary>
     event Action<bool>? ConnectionChanged;
+    /// <summary>Passo atual da ligação (para mostrar no estado).</summary>
+    event Action<string>? Progress;
 }

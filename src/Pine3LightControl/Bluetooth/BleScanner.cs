@@ -5,7 +5,7 @@ using Windows.Devices.Bluetooth.Advertisement;
 
 namespace Pine3LightControl.Bluetooth;
 
-internal sealed record BleAdvert(string Address, string Name, short Rssi, bool HasFfe0);
+internal sealed record BleAdvert(string Address, string Name, short Rssi, bool HasFfe0, string AddressType);
 
 /// <summary>Procura dispositivos BLE por anúncios (scan ativo, para obter os nomes).</summary>
 internal sealed class BleScanner : IDisposable
@@ -25,7 +25,8 @@ internal sealed class BleScanner : IDisposable
         {
             var name = a.Advertisement.LocalName ?? "";
             bool ffe0 = a.Advertisement.ServiceUuids.Contains(Sp110e.ServiceUuid);
-            Found?.Invoke(new BleAdvert(BleAddress.Format(a.BluetoothAddress), name, a.RawSignalStrengthInDBm, ffe0));
+            Found?.Invoke(new BleAdvert(BleAddress.Format(a.BluetoothAddress), name, a.RawSignalStrengthInDBm, ffe0,
+                a.BluetoothAddressType.ToString()));
         };
         w.Stopped += (_, a) =>
             Stopped?.Invoke(a.Error == Windows.Devices.Bluetooth.BluetoothError.Success ? null : a.Error.ToString());

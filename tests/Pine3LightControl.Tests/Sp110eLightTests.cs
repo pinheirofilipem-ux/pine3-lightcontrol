@@ -15,10 +15,12 @@ sealed class FakeLink : IBleLink
     public string LastError => FailConnect ? "fake failure" : "";
     public event Action<byte[]>? Notified;
     public event Action<bool>? ConnectionChanged;
+    public event Action<string>? Progress;
 
     public Task<bool> ConnectAsync(CancellationToken ct)
     {
         ConnectCalls++;
+        Progress?.Invoke("step");
         IsConnected = !FailConnect;
         if (IsConnected) ConnectionChanged?.Invoke(true);
         return Task.FromResult(IsConnected);
@@ -128,5 +130,23 @@ public class Sp110eLightTests
         Assert.Equal(new byte[] { 5, 0, 0, 0x1C }, link.LastCommand(Sp110e.CmdIcModel));
         Assert.Equal(new byte[] { 2, 0, 0, 0x3C }, link.LastCommand(Sp110e.CmdRgbOrder));
         Assert.Equal(new byte[] { 4, 0, 0, 0x2D }, link.LastCommand(Sp110e.CmdPixelCount)); // limitado a 1024
+    }
+}
+
+public class LightHubBleTests
+{
+    [Fact]
+    public async Task Address_type_seen_in_scan_is_saved()
+    {
+        AppPaths.DataDir = Path.Combine(Path.GetTempPath(), "p3lc-test-" + Guid.NewGuid());
+        var cfg = new AppConfig();
+        await using var hub = new Pine3LightControl.Core.Lights.LightHub(cfg, _ => new FakeLink());
+        var l = hub.AddBleDevice("aa:bb:cc:dd:ee:ff", "Strip");
+        Assert.Equal("AA:BB:CC:DD:EE:FF", l.Config.Address);
+        Assert.Equal("", l.Config.AddressType);
+        hub.LearnAddressType("AA:BB:CC:DD:EE:FF", "Random");
+        hub.LearnAddressType("AA:BB:CC:DD:EE:FF", "Unspecified");   // ignorado
+        Assert.Equal("Random", AppConfig.Load().BleDevices.Single().AddressType);
+        Assert.Same(l, hub.AddBleDevice("AA:BB:CC:DD:EE:FF", "dup"));
     }
 }

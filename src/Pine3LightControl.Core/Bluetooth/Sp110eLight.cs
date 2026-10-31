@@ -27,6 +27,7 @@ public sealed class Sp110eLight : LightBase, IAsyncDisposable
         _queue.Error += e => Log.Write($"[BLE] {_cfg.Name}: falha a escrever: {e.Message}");
         _link.Notified += OnNotified;
         _link.ConnectionChanged += OnConnectionChanged;
+        _link.Progress += OnProgress;
         Effect = Sp110e.ModeStatic;
     }
 
@@ -117,6 +118,11 @@ public sealed class Sp110eLight : LightBase, IAsyncDisposable
             if (_loop is not null) SetStatus("Connection lost — retrying");
         }
         else SetStatus("Connected");
+    }
+
+    private void OnProgress(string step)
+    {
+        if (_connecting) SetStatus($"Connecting… {step}");
     }
 
     private void SetStatus(string s)
@@ -215,6 +221,7 @@ public sealed class Sp110eLight : LightBase, IAsyncDisposable
         await StopAsync().ConfigureAwait(false);
         _link.Notified -= OnNotified;
         _link.ConnectionChanged -= OnConnectionChanged;
+        _link.Progress -= OnProgress;
         await _link.DisposeAsync().ConfigureAwait(false);
     }
 }

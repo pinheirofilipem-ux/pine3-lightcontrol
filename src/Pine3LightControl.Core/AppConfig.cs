@@ -12,6 +12,11 @@ public sealed class BleDeviceConfig
     public string Address { get; set; } = "";
     public string Name { get; set; } = "";
     public bool AutoConnect { get; set; } = true;
+    /// <summary>
+    /// Tipo de endereço BLE visto no scan: "Public" ou "Random" ("" = desconhecido,
+    /// a ligação experimenta os dois). Ligar com o tipo errado deixa o Windows à espera.
+    /// </summary>
+    public string AddressType { get; set; } = "";
 }
 
 public sealed class HomeAssistantConfig
