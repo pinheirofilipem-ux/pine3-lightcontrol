@@ -4,7 +4,7 @@
 ; por causa do SMBus das memórias e arranca por tarefa agendada, sem pedido de UAC.
 
 #define AppName      "Pine3 Light Control"
-#define AppVersion   "0.5.3"
+#define AppVersion   "0.5.4"
 #define AppExe       "Pine3LightControl.exe"
 #define AppPublisher "magnificent3"
 #define AppIdGuid    "{FAFBA8E6-77D0-43D8-B4A5-96CE9FA5F5B1}"

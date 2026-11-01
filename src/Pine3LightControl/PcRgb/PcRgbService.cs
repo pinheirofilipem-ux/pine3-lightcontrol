@@ -94,16 +94,29 @@ internal static class PcRgbService
 
         if (cfg.Keyboard)
         {
-            // O OK-M tem várias interfaces "vendor-defined": experimenta cada uma até o VIA responder
-            var candidates = HidSharpLink.FindAll(DuckyOkM.Vid, d => d.ProductID == DuckyOkM.Pid &&
+            // O OK-M tem várias interfaces "vendor-defined": experimenta cada uma até o VIA responder.
+            // Com fio: 28E9:31C6. Sem fios: recetor 2.4 GHz 056D:C077 (só se sabe se passa o VIA
+            // experimentando; o único comando enviado na deteção é o 0x01, que só lê a versão).
+            var wired = HidSharpLink.FindAll(DuckyOkM.Vid, d => d.ProductID == DuckyOkM.Pid &&
                 (HidSharpLink.HasUsage(d, 0xFF60, 0x61) || d.GetMaxOutputReportLength() is 33 or 65));
-            if (candidates.Count == 0) KeyboardStatus = "Not found — connect the keyboard with the USB cable";
+            var dongleAll = HidSharpLink.FindAll(DuckyOkM.DongleVid, d => d.ProductID == DuckyOkM.DonglePid);
+            foreach (var d in dongleAll) Log.Write($"[Keyboard] recetor 2.4 GHz: {HidSharpLink.Describe(d)}");
+            var dongle = dongleAll.Where(d => d.GetMaxOutputReportLength() > 0 && HidSharpLink.HasVendorPage(d)).ToList();
+            var candidates = wired.OrderByDescending(c => HidSharpLink.HasUsage(c, 0xFF60, 0x61))
+                .Concat(dongle.OrderByDescending(c => HidSharpLink.HasUsage(c, 0xFF60, 0x61))).ToList();
+            if (candidates.Count == 0)
+                KeyboardStatus = dongleAll.Count > 0
+                    ? "Wireless receiver found, but it has no interface for lighting — use the USB cable"
+                    : "Not found — connect the keyboard with the USB cable";
             else
             {
-                KeyboardStatus = "Found, but no interface answered the VIA protocol (close the VIA app)";
-                foreach (var d in candidates.OrderByDescending(c => HidSharpLink.HasUsage(c, 0xFF60, 0x61)))
+                KeyboardStatus = wired.Count > 0
+                    ? "Found, but no interface answered the VIA protocol (close the VIA app)"
+                    : "Wireless receiver doesn't pass lighting commands — use the USB cable";
+                foreach (var d in candidates)
                 {
-                    Log.Write($"[Keyboard] a experimentar {HidSharpLink.Describe(d)}");
+                    bool viaDongle = d.VendorID == DuckyOkM.DongleVid;
+                    Log.Write($"[Keyboard] a experimentar {(viaDongle ? "recetor " : "")}{HidSharpLink.Describe(d)}");
                     var raw = HidSharpLink.TryOpen(d);
                     if (raw is null) { Log.Write("[Keyboard] não abriu"); continue; }
                     var zones = DuckyOkM.Create(new LoggingHid(raw, "Keyboard") { Limit = 20 }, out var p2);
@@ -114,7 +127,7 @@ internal static class PcRgbService
                         continue;
                     }
                     lights.AddRange(zones);
-                    KeyboardStatus = "Ducky OK-M 75 found (keys + side light)";
+                    KeyboardStatus = $"Ducky OK-M 75 found{(viaDongle ? " (wireless)" : "")} (keys + side light)";
                     break;
                 }
             }

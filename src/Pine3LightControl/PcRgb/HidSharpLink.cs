@@ -94,6 +94,10 @@ internal sealed class HidSharpLink : IHidLink
         return d.GetReportDescriptor().DeviceItems.Any(i => i.Usages.GetAllValues().Contains(target));
     }
 
+    /// <summary>Tem alguma usage page do fabricante (0xFF00–0xFFFF): onde podem viver protocolos como o VIA.</summary>
+    public static bool HasVendorPage(HidDevice d) =>
+        d.GetReportDescriptor().DeviceItems.Any(i => i.Usages.GetAllValues().Any(u => (u >> 16) >= 0xFF00));
+
     /// <summary>Abre o controlador do LED Radeon (interface HID 1). Null se não existir.</summary>
     public static HidSharpLink? OpenRadeon(out ushort pid, out string problem)
     {
