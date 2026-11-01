@@ -19,6 +19,9 @@ HA, com a integração em `custom_components/sp110e`.
   interface 1, relatórios de 65 bytes). Memória: Corsair DRAM 0x58–0x5F, só PIDs Vengeance RGB
   Pro DDR4 com CRC certo, modo direto (volátil); firmware < 4 grava efeito estático (debounce).
   Mutex global `Global\Access_SMBUS.HTP.Method` partilhado com o Pine3 Monitor/LHM.
+  Rato: Logitech HID++ 2.0 pelo recetor 046D:C539 (coleção de 20 bytes), feature 0x8070,
+  SET_EFFECT 0x30 sem persistência. Teclado: Ducky OK-M 75 (28E9:31C6) por VIA 12 (usage page
+  0xFF60), canal 3 = teclas, 2 = lateral; nunca envia 0x09 (gravar na EEPROM).
 - A app corre como administrador (requireAdministrator) e arranca por tarefa agendada; o
   instalador é para todo o sistema. PawnIOLib.dll + SmbusI801.bin vêm de `tools/get-pawnio.ps1`.
 - Cenas: `Core/Scenes` (`SceneEngine.Capture/Apply`), guardadas em `AppConfig.Scenes`.

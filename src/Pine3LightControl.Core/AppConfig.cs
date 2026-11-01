@@ -34,6 +34,10 @@ public sealed class PcRgbConfig
     public bool Gpu { get; set; } = true;
     /// <summary>Memórias Corsair por SMBus (PawnIO + administrador). Desligado por omissão.</summary>
     public bool Memory { get; set; }
+    /// <summary>Rato Logitech (HID++ pelo recetor LIGHTSPEED).</summary>
+    public bool Mouse { get; set; } = true;
+    /// <summary>Teclado Ducky OK-M 75 (VIA).</summary>
+    public bool Keyboard { get; set; } = true;
 }
 
 /// <summary>Ligação ao servidor SDK do OpenRGB (gráfica, memórias, periféricos...).</summary>

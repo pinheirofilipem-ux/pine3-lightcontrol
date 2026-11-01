@@ -14,7 +14,9 @@ made by magnificent3
   input booleans, fans, scenes, scripts and buttons.
 - **PC RGB, built in:** the Radeon RX 6000 reference logo (Cooler Master USB controller,
   no admin needed) and Corsair Vengeance RGB Pro DDR4 memory (SMBus through the PawnIO
-  driver), using the protocols documented in OpenRGB's source, with no extra software running.
+  driver), Logitech LIGHTSPEED mice such as the G903 (HID++ 2.0, feature 0x8070) and the
+  Ducky OK-M 75 keyboard (VIA lighting, keys + side light), using the protocols documented in
+  OpenRGB's source and VIA's, with no extra software running. Nothing is saved in the devices.
 - **PC RGB (OpenRGB, optional):** graphics card, memory and any other device OpenRGB sees, through
   its SDK server (TCP 6742): on/off, brightness and color. Devices with the same name
   (e.g. four memory modules) are controlled as one light.

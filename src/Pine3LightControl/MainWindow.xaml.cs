@@ -261,6 +261,8 @@ public partial class MainWindow : Window
     {
         PcGpuStatus.Text = PcRgb.PcRgbService.GpuStatus;
         PcMemoryStatus.Text = PcRgb.PcRgbService.MemoryStatus;
+        PcMouseStatus.Text = PcRgb.PcRgbService.MouseStatus;
+        PcKeyboardStatus.Text = PcRgb.PcRgbService.KeyboardStatus;
     }
 
     private async void PcDetect_Click(object sender, RoutedEventArgs e)
@@ -277,8 +279,10 @@ public partial class MainWindow : Window
         }
         c.Gpu = PcGpu.IsChecked == true;
         c.Memory = PcMemory.IsChecked == true;
+        c.Mouse = PcMouse.IsChecked == true;
+        c.Keyboard = PcKeyboard.IsChecked == true;
         _hub.Config.Save();
-        PcGpuStatus.Text = PcMemoryStatus.Text = "Detecting…";
+        PcGpuStatus.Text = PcMemoryStatus.Text = PcMouseStatus.Text = PcKeyboardStatus.Text = "Detecting…";
         await PcRgb.PcRgbService.DetectAsync(_hub);
         UpdatePcStatus();
     }
@@ -515,6 +519,8 @@ public partial class MainWindow : Window
         OrgbEnabled.IsChecked = c.OpenRgb.Enabled;
         PcGpu.IsChecked = c.PcRgb.Gpu;
         PcMemory.IsChecked = c.PcRgb.Memory;
+        PcMouse.IsChecked = c.PcRgb.Mouse;
+        PcKeyboard.IsChecked = c.PcRgb.Keyboard;
         HaInsecure.IsChecked = c.HomeAssistant.AllowInvalidCertificate;
         SetTokenHint();
         AppearanceCombo.SelectedItem = AppearanceCombo.Items.OfType<ComboBoxItem>()

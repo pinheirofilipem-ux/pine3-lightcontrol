@@ -312,13 +312,19 @@
                         <StackPanel>
                             <TextBlock Text="Built in (no extra software)" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
-                                       Text="Pine3 Light Control talks to these directly. Close OpenRGB, iCUE and the AMD RGB LED tool so they don't fight over the same LEDs." />
+                                       Text="Pine3 Light Control talks to these directly. Close OpenRGB, iCUE, G HUB and the AMD RGB LED tool so they don't fight over the same LEDs." />
                             <CheckBox x:Name="PcGpu" Content="Radeon RX 6000 reference logo (USB)" />
                             <TextBlock x:Name="PcGpuStatus" Style="{StaticResource Muted}" Margin="28,2,0,10" />
                             <CheckBox x:Name="PcMemory" Content="Corsair Vengeance RGB Pro DDR4 memory (SMBus)" />
                             <TextBlock Style="{StaticResource Muted}" Margin="28,2,0,2" FontSize="12"
                                        Text="Uses the PawnIO driver (the one Pine3 Monitor installs) with the same protocol and safety checks as OpenRGB: only DDR4 RGB addresses, only modules that identify as Vengeance RGB Pro, colors sent in volatile direct mode." />
                             <TextBlock x:Name="PcMemoryStatus" Style="{StaticResource Muted}" Margin="28,2,0,10" />
+                            <CheckBox x:Name="PcMouse" Content="Logitech mouse (LIGHTSPEED receiver, e.g. G903)" />
+                            <TextBlock x:Name="PcMouseStatus" Style="{StaticResource Muted}" Margin="28,2,0,10" />
+                            <CheckBox x:Name="PcKeyboard" Content="Ducky OK-M 75 keyboard (VIA)" />
+                            <TextBlock x:Name="PcKeyboardStatus" Style="{StaticResource Muted}" Margin="28,2,0,10" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" FontSize="12"
+                                       Text="Close G HUB and VIA while using these. Changes are not saved in the devices: they come back to their own lighting after a power cycle." />
                             <Button Content="Save and detect" HorizontalAlignment="Left" Click="PcDetect_Click" />
                         </StackPanel>
                     </Border>

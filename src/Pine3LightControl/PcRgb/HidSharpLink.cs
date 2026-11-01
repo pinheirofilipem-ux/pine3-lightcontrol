@@ -17,6 +17,44 @@ internal sealed class HidSharpLink : IHidLink
         _outLen = outLen;
     }
 
+    /// <summary>Abre o primeiro dispositivo HID que cumpra o filtro.</summary>
+    public static HidSharpLink? Open(int vid, Func<HidDevice, bool> match, string what, out HidDevice? device, out string problem)
+    {
+        device = null;
+        problem = "";
+        try
+        {
+            device = DeviceList.Local.GetHidDevices(vid).FirstOrDefault(d =>
+            {
+                try { return match(d); } catch { return false; }
+            });
+            if (device is null)
+            {
+                problem = $"no {what} found";
+                return null;
+            }
+            if (!device.TryOpen(out HidStream stream))
+            {
+                problem = $"could not open the {what} (is another RGB app using it?)";
+                return null;
+            }
+            int len = device.GetMaxOutputReportLength();
+            return new HidSharpLink(stream, len);
+        }
+        catch (Exception e)
+        {
+            problem = e.Message;
+            return null;
+        }
+    }
+
+    /// <summary>Tem a usage page/usage indicada no descritor (ex.: 0xFF60/0x61 do VIA).</summary>
+    public static bool HasUsage(HidDevice d, uint usagePage, uint usage)
+    {
+        var target = (usagePage << 16) | usage;
+        return d.GetReportDescriptor().DeviceItems.Any(i => i.Usages.GetAllValues().Contains(target));
+    }
+
     /// <summary>Abre o controlador do LED Radeon (interface HID 1). Null se não existir.</summary>
     public static HidSharpLink? OpenRadeon(out ushort pid, out string problem)
     {
