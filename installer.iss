@@ -3,7 +3,7 @@
 ; Instala por utilizador (sem UAC): a app não precisa de administrador.
 
 #define AppName      "Pine3 Light Control"
-#define AppVersion   "0.1.3"
+#define AppVersion   "0.1.4"
 #define AppExe       "Pine3LightControl.exe"
 #define AppPublisher "magnificent3"
 

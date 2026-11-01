@@ -12,6 +12,7 @@ using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Radios;
 using Windows.Foundation;
+using Windows.Foundation.Metadata;
 using Windows.Security.Cryptography;
 
 namespace Pine3LightControl.Bluetooth;
@@ -31,6 +32,9 @@ internal sealed class WinBleLink : IBleLink
     private GattCharacteristic? _ch;
     private GattWriteOption _writeOption = GattWriteOption.WriteWithResponse;
     private volatile bool _connected;
+    private object? _connParams;               // pedido de parâmetros de ligação (Windows 11)
+    private CancellationTokenSource? _phaseCts; // cancela a descoberta se a ligação cair
+    private DateTime _openedAt;
 
     public WinBleLink(BleDeviceConfig cfg, Action saveConfig)
     {
@@ -179,6 +183,8 @@ internal sealed class WinBleLink : IBleLink
             return false;
         }
         _dev = dev;
+        _openedAt = DateTime.UtcNow;
+        dev.ConnectionStatusChanged += OnConnectionStatusChanged;
 
         // Pede ao Windows para manter a ligação aberta (senão fecha-a ao fim de uns segundos sem tráfego).
         try
@@ -186,6 +192,7 @@ internal sealed class WinBleLink : IBleLink
             _session = await Timed(GattSession.FromDeviceIdAsync(dev.BluetoothDeviceId), "opening the GATT session", ct)
                 .ConfigureAwait(false);
             _session.MaintainConnection = true;
+            _session.SessionStatusChanged += OnSessionStatusChanged;
         }
         catch (Exception e) when (e is not OperationCanceledException) { Log.Write($"[BLE] {Label}: GattSession: {e.Message}"); }
 
@@ -199,9 +206,11 @@ internal sealed class WinBleLink : IBleLink
             }
             Log.Write($"[BLE] {Label}: sessão GATT ativa (MTU {_session.MaxPduSize})");
         }
+        RequestFastConnection(dev);
 
         Step("reading services");
-        var sr = await Timed(dev.GetGattServicesForUuidAsync(Sp110e.ServiceUuid, BluetoothCacheMode.Uncached),
+        var sr = await DiscoverAsync(m => dev.GetGattServicesForUuidAsync(Sp110e.ServiceUuid, m),
+            r => r.Status == GattCommunicationStatus.Success && r.Services.Count > 0, r => $"{r.Status}, {r.Services.Count}",
             "reading services", ct).ConfigureAwait(false);
         if (sr.Status != GattCommunicationStatus.Success)
         {
@@ -217,7 +226,9 @@ internal sealed class WinBleLink : IBleLink
         foreach (var extra in sr.Services.Skip(1)) extra.Dispose();
 
         Step("reading characteristics");
-        var cr = await Timed(_service.GetCharacteristicsForUuidAsync(Sp110e.CharacteristicUuid, BluetoothCacheMode.Uncached),
+        var service = _service;
+        var cr = await DiscoverAsync(m => service.GetCharacteristicsForUuidAsync(Sp110e.CharacteristicUuid, m),
+            r => r.Status == GattCommunicationStatus.Success && r.Characteristics.Count > 0, r => $"{r.Status}, {r.Characteristics.Count}",
             "reading characteristics", ct).ConfigureAwait(false);
         if (cr.Status != GattCommunicationStatus.Success || cr.Characteristics.Count == 0)
         {
@@ -245,10 +256,61 @@ internal sealed class WinBleLink : IBleLink
             catch (TimeoutException e) { Log.Write($"[BLE] {Label}: {e.Message} — continua sem notificações"); }
         }
 
-        dev.ConnectionStatusChanged += OnConnectionStatusChanged;
         _connected = true;
+        Log.Write($"[BLE] {Label}: pronto em {(DateTime.UtcNow - _openedAt).TotalSeconds:0.0} s");
         return true;
     }
+
+    /// <summary>
+    /// Descoberta GATT: primeiro a cache do Windows (instantâneo depois da 1.ª ligação),
+    /// depois o dispositivo. Aborta logo se a ligação cair a meio (o SP110E corta
+    /// ligações em que não recebe nada) em vez de ficar à espera.
+    /// </summary>
+    private async Task<T> DiscoverAsync<T>(Func<BluetoothCacheMode, IAsyncOperation<T>> op, Func<T, bool> ok,
+        Func<T, string> describe, string what, CancellationToken ct)
+    {
+        T last = default!;
+        foreach (var mode in new[] { BluetoothCacheMode.Cached, BluetoothCacheMode.Uncached })
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(StepTimeout);
+            _phaseCts = cts;
+            var t0 = DateTime.UtcNow;
+            try
+            {
+                last = await op(mode).AsTask(cts.Token).ConfigureAwait(false);
+                Log.Write($"[BLE] {Label}: {what} ({mode}): {describe(last)} em {(DateTime.UtcNow - t0).TotalSeconds:0.0} s");
+                if (ok(last)) return last;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                bool dropped = _dev?.ConnectionStatus == BluetoothConnectionStatus.Disconnected;
+                throw new TimeoutException(dropped
+                    ? $"the controller dropped the connection while {what}"
+                    : $"no answer while {what} ({StepTimeout.TotalSeconds:0} s)");
+            }
+            finally { _phaseCts = null; }
+        }
+        return last;
+    }
+
+    /// <summary>Pede intervalos de ligação curtos (Windows 11): a descoberta acaba antes de o controlador desistir.</summary>
+    private void RequestFastConnection(BluetoothLEDevice dev)
+    {
+        try
+        {
+            if (!ApiInformation.IsMethodPresent("Windows.Devices.Bluetooth.BluetoothLEDevice", "RequestPreferredConnectionParameters"))
+                return;
+            var req = dev.RequestPreferredConnectionParameters(BluetoothLEPreferredConnectionParameters.ThroughputOptimized);
+            _connParams = req;
+            Log.Write($"[BLE] {Label}: parâmetros de ligação rápidos: {req.Status}");
+        }
+        catch (Exception e) { Log.Write($"[BLE] {Label}: parâmetros de ligação: {e.Message}"); }
+    }
+
+    private void OnSessionStatusChanged(GattSession sender, GattSessionStatusChangedEventArgs args) =>
+        Log.Write($"[BLE] {Label}: sessão {args.Status}{(args.Error != BluetoothError.Success ? $" ({args.Error})" : "")} " +
+                  $"+{(DateTime.UtcNow - _openedAt).TotalSeconds:0.0} s");
 
     private static string Describe(GattCommunicationStatus s) => s switch
     {
@@ -260,6 +322,9 @@ internal sealed class WinBleLink : IBleLink
 
     private void OnConnectionStatusChanged(BluetoothLEDevice sender, object args)
     {
+        Log.Write($"[BLE] {Label}: ligação {sender.ConnectionStatus} +{(DateTime.UtcNow - _openedAt).TotalSeconds:0.0} s");
+        if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected && !_connected)
+            try { _phaseCts?.Cancel(); } catch { }
         if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected && _connected)
         {
             Log.Write($"[BLE] {Label}: ligação perdida");
@@ -298,6 +363,9 @@ internal sealed class WinBleLink : IBleLink
         _connected = false;
         try { if (_ch is not null) _ch.ValueChanged -= OnValueChanged; } catch { }
         try { if (_dev is not null) _dev.ConnectionStatusChanged -= OnConnectionStatusChanged; } catch { }
+        try { if (_session is not null) _session.SessionStatusChanged -= OnSessionStatusChanged; } catch { }
+        try { (_connParams as IDisposable)?.Dispose(); } catch { }
+        _connParams = null;
         try { _service?.Dispose(); } catch { }
         try { _session?.Dispose(); } catch { }
         try { _dev?.Dispose(); } catch { }
