@@ -48,6 +48,18 @@ internal sealed class TrayIcon : IDisposable
         _menu.Items.Add(new Forms.ToolStripSeparator());
         _menu.Items.Add("Open control panel", null, (_, _) => _showMain());
 
+        var scenes = _hub.Scenes;
+        if (scenes.Count > 0)
+        {
+            _menu.Items.Add(new Forms.ToolStripSeparator());
+            foreach (var sc in scenes)
+            {
+                var scene = sc;
+                _menu.Items.Add(new Forms.ToolStripMenuItem("\u2605  " + scene.Name.Replace("&", "&&"), null,
+                    (_, _) => _hub.ActivateScene(scene)));
+            }
+        }
+
         var toggles = lights.Where(l => (l.Features & LightFeatures.OnOff) != 0).ToList();
         var actions = lights.Where(l => (l.Features & LightFeatures.Action) != 0).ToList();
 
@@ -72,7 +84,7 @@ internal sealed class TrayIcon : IDisposable
 
         if (actions.Count > 0)
         {
-            var sub = new Forms.ToolStripMenuItem("Scenes && scripts");
+            var sub = new Forms.ToolStripMenuItem("Home Assistant scenes && scripts");
             foreach (var a in actions)
             {
                 var action = a;

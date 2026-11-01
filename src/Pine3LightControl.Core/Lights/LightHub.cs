@@ -1,23 +1,20 @@
-using Pine3LightControl.Core.Bluetooth;
 using Pine3LightControl.Core.HomeAssistant;
+using Pine3LightControl.Core.Scenes;
 
 namespace Pine3LightControl.Core.Lights;
 
 /// <summary>
-/// Junta todas as luzes (controladores Bluetooth + entidades escolhidas do Home
-/// Assistant) e mantém-nas em sincronia com a configuração.
+/// Junta todas as luzes (entidades escolhidas do Home Assistant) e as cenas, e
+/// mantém-nas em sincronia com a configuração.
 /// </summary>
 public sealed class LightHub : IAsyncDisposable
 {
-    private readonly Func<BleDeviceConfig, IBleLink> _linkFactory;
     private readonly object _gate = new();
-    private readonly List<Sp110eLight> _ble = new();
     private readonly List<HaLight> _ha = new();
 
-    public LightHub(AppConfig config, Func<BleDeviceConfig, IBleLink> linkFactory)
+    public LightHub(AppConfig config)
     {
         Config = config;
-        _linkFactory = linkFactory;
         Ha.EntityUpdated += e =>
         {
             HaLight? l;
@@ -35,15 +32,12 @@ public sealed class LightHub : IAsyncDisposable
     public event Action? ListChanged;
     /// <summary>Estado de uma luz mudou (qualquer thread).</summary>
     public event Action<ILight>? LightChanged;
+    /// <summary>Cenas criadas, alteradas, removidas ou reordenadas.</summary>
+    public event Action? ScenesChanged;
 
     public IReadOnlyList<ILight> Lights
     {
-        get { lock (_gate) return _ble.Cast<ILight>().Concat(_ha).ToArray(); }
-    }
-
-    public IReadOnlyList<Sp110eLight> BleLights
-    {
-        get { lock (_gate) return _ble.ToArray(); }
+        get { lock (_gate) return _ha.ToArray(); }
     }
 
     public IReadOnlyList<HaLight> HaLights
@@ -51,56 +45,12 @@ public sealed class LightHub : IAsyncDisposable
         get { lock (_gate) return _ha.ToArray(); }
     }
 
+    public ILight? FindLight(string id) => Lights.FirstOrDefault(l => l.Id == id);
+
     public async Task StartAsync()
     {
-        foreach (var d in Config.BleDevices) AddBle(d, start: d.AutoConnect);
         SyncHaLights();
         await ReconnectHaAsync().ConfigureAwait(false);
-    }
-
-    // ── Bluetooth ────────────────────────────────────────────────────────────
-
-    private Sp110eLight AddBle(BleDeviceConfig d, bool start)
-    {
-        var light = new Sp110eLight(d, _linkFactory(d));
-        light.Changed += () => LightChanged?.Invoke(light);
-        lock (_gate) _ble.Add(light);
-        if (start) light.Start();
-        return light;
-    }
-
-    public Sp110eLight AddBleDevice(string address, string name, string addressType = "")
-    {
-        var existing = BleLights.FirstOrDefault(l => string.Equals(l.Config.Address, address, StringComparison.OrdinalIgnoreCase));
-        if (existing is not null) return existing;
-        var d = new BleDeviceConfig { Address = address.ToUpperInvariant(), Name = name, AutoConnect = true, AddressType = addressType };
-        Config.BleDevices.Add(d);
-        Config.Save();
-        var light = AddBle(d, start: true);
-        Log.Write($"[BLE] adicionado {name} ({address})");
-        ListChanged?.Invoke();
-        return light;
-    }
-
-    /// <summary>O scan viu o tipo de endereço de um controlador já adicionado: guarda-o.</summary>
-    public void LearnAddressType(string address, string addressType)
-    {
-        if (addressType is not ("Public" or "Random")) return;
-        var d = Config.BleDevices.FirstOrDefault(x => string.Equals(x.Address, address, StringComparison.OrdinalIgnoreCase));
-        if (d is null || d.AddressType == addressType) return;
-        d.AddressType = addressType;
-        Config.Save();
-        Log.Write($"[BLE] {d.Name}: endereço {addressType}");
-    }
-
-    public async Task RemoveBleDeviceAsync(Sp110eLight light)
-    {
-        lock (_gate) _ble.Remove(light);
-        Config.BleDevices.Remove(light.Config);
-        Config.Save();
-        ListChanged?.Invoke();
-        await light.DisposeAsync().ConfigureAwait(false);
-        Log.Write($"[BLE] removido {light.Name}");
     }
 
     // ── Home Assistant ───────────────────────────────────────────────────────
@@ -164,6 +114,67 @@ public sealed class LightHub : IAsyncDisposable
         foreach (var l in HaLights) l.Refresh();
     }
 
+    // ── Cenas ────────────────────────────────────────────────────────────────
+
+    public IReadOnlyList<Scene> Scenes => Config.Scenes.ToArray();
+
+    /// <summary>Cria uma cena com o estado atual das luzes indicadas.</summary>
+    public Scene CreateScene(string name, IEnumerable<string> lightIds)
+    {
+        var scene = SceneEngine.Capture(name, lightIds.Select(FindLight).OfType<ILight>());
+        Config.Scenes.Add(scene);
+        Config.Save();
+        Log.Write($"[Cenas] criada \"{scene.Name}\" ({scene.Lights.Count} luzes)");
+        ScenesChanged?.Invoke();
+        return scene;
+    }
+
+    /// <summary>Volta a gravar a cena com o estado atual das mesmas luzes.</summary>
+    public void UpdateScene(Scene scene)
+    {
+        var fresh = SceneEngine.Capture(scene.Name, scene.Lights.Select(s => FindLight(s.LightId)).OfType<ILight>());
+        // Luzes que agora não existem (entidade desmarcada / HA offline) mantêm o estado antigo
+        foreach (var old in scene.Lights)
+            if (fresh.Lights.All(f => f.LightId != old.LightId)) fresh.Lights.Add(old);
+        scene.Lights = fresh.Lights;
+        Config.Save();
+        ScenesChanged?.Invoke();
+    }
+
+    public void RenameScene(Scene scene, string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0 || name == scene.Name) return;
+        scene.Name = name;
+        Config.Save();
+        ScenesChanged?.Invoke();
+    }
+
+    public void DeleteScene(Scene scene)
+    {
+        if (!Config.Scenes.Remove(scene)) return;
+        Config.Save();
+        ScenesChanged?.Invoke();
+    }
+
+    public void MoveScene(Scene scene, int delta)
+    {
+        var list = Config.Scenes;
+        int i = list.IndexOf(scene), j = i + delta;
+        if (i < 0 || j < 0 || j >= list.Count) return;
+        (list[i], list[j]) = (list[j], list[i]);
+        Config.Save();
+        ScenesChanged?.Invoke();
+    }
+
+    /// <summary>Aplica a cena. Devolve quantas luzes não estavam disponíveis.</summary>
+    public int ActivateScene(Scene scene)
+    {
+        var missing = SceneEngine.Apply(scene, FindLight);
+        Log.Write($"[Cenas] \"{scene.Name}\" ativada{(missing > 0 ? $" ({missing} luz(es) indisponível(eis))" : "")}");
+        return missing;
+    }
+
     // ── Ações globais ────────────────────────────────────────────────────────
 
     public void SetAllPower(bool on)
@@ -172,10 +183,5 @@ public sealed class LightHub : IAsyncDisposable
             if (l.IsAvailable && (l.Features & LightFeatures.OnOff) != 0) l.SetPower(on);
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        foreach (var l in BleLights)
-            try { await l.DisposeAsync().ConfigureAwait(false); } catch { }
-        await Ha.DisposeAsync().ConfigureAwait(false);
-    }
+    public async ValueTask DisposeAsync() => await Ha.DisposeAsync().ConfigureAwait(false);
 }

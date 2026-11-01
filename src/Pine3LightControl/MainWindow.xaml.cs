@@ -9,11 +9,10 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
-using Pine3LightControl.Bluetooth;
 using Pine3LightControl.Core;
-using Pine3LightControl.Core.Bluetooth;
 using Pine3LightControl.Core.HomeAssistant;
 using Pine3LightControl.Core.Lights;
+using Pine3LightControl.Core.Scenes;
 using Pine3LightControl.ViewModels;
 using Forms = System.Windows.Forms;
 
@@ -26,16 +25,13 @@ public partial class MainWindow : Window
     private bool _quitting;
 
     // Lights
-    private readonly ObservableCollection<LightVm> _bleCards = new();
     private readonly ObservableCollection<LightVm> _haCards = new();
     private readonly HashSet<string> _dirty = new();
     private bool _syncQueued;
 
-    // Bluetooth
-    private readonly ObservableCollection<BleDeviceVm> _bleDevices = new();
-    private readonly ObservableCollection<ScanResultVm> _scan = new();
-    private readonly BleScanner _scanner = new();
-    private readonly DispatcherTimer _scanTimer = new() { Interval = TimeSpan.FromSeconds(20) };
+    // Scenes
+    private readonly ObservableCollection<SceneVm> _scenes = new();
+    private readonly ObservableCollection<SceneLightChoice> _newSceneLights = new();
 
     // Home Assistant
     private readonly ObservableCollection<EntityVm> _entities = new();
@@ -52,11 +48,10 @@ public partial class MainWindow : Window
         NavFooter.Text = ver;
         DataPath.Text = AppPaths.DataDir;
 
-        BleLightsList.ItemsSource = _bleCards;
         HaLightsList.ItemsSource = _haCards;
-        BleDevicesList.ItemsSource = _bleDevices;
-        ScanList.ItemsSource = _scan;
-        CollectionViewSource.GetDefaultView(_scan).Filter = o => ScanAll.IsChecked == true || ((ScanResultVm)o).LooksLikeLedHue;
+        ScenesList.ItemsSource = _scenes;
+        QuickScenes.ItemsSource = _scenes;
+        NewSceneLights.ItemsSource = _newSceneLights;
         HaEntities.ItemsSource = _entities;
         var ev = CollectionViewSource.GetDefaultView(_entities);
         ev.Filter = EntityFilter;
@@ -77,9 +72,8 @@ public partial class MainWindow : Window
         _hub.Ha.ConnectionChanged += () => Dispatcher.BeginInvoke(UpdateHaStatus);
         _hub.Ha.EntitiesReloaded += () => Dispatcher.BeginInvoke(RebuildEntities);
 
-        _scanner.Found += a => Dispatcher.BeginInvoke(() => OnAdvert(a));
-        _scanner.Stopped += err => Dispatcher.BeginInvoke(() => ScanStopped(err));
-        _scanTimer.Tick += (_, _) => StopScan();
+        _hub.ScenesChanged += () => Dispatcher.BeginInvoke(RebuildScenes);
+        RebuildScenes();
         _haTimer.Tick += (_, _) => RefreshEntityStates();
 
         // Só agora: selecionar no XAML dispara o evento durante o InitializeComponent,
@@ -92,7 +86,6 @@ public partial class MainWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        StopScan();
         if (!_quitting)
         {
             // Fechar só esconde: as luzes continuam controláveis pela tray.
@@ -112,7 +105,6 @@ public partial class MainWindow : Window
     public void CloseForQuit()
     {
         _quitting = true;
-        _scanner.Dispose();
         Close();
     }
 
@@ -122,14 +114,14 @@ public partial class MainWindow : Window
         if (Nav.SelectedItem is not ListBoxItem item) return;
         var tag = (string)item.Tag;
         PageLights.Visibility = tag == "Lights" ? Visibility.Visible : Visibility.Collapsed;
-        PageBluetooth.Visibility = tag == "Bluetooth" ? Visibility.Visible : Visibility.Collapsed;
+        PageScenes.Visibility = tag == "Scenes" ? Visibility.Visible : Visibility.Collapsed;
         PageHomeAssistant.Visibility = tag == "HomeAssistant" ? Visibility.Visible : Visibility.Collapsed;
         PageSettings.Visibility = tag == "Settings" ? Visibility.Visible : Visibility.Collapsed;
         PageAbout.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
 
         if (tag == "HomeAssistant") { RefreshEntityStates(); _haTimer.Start(); }
         else _haTimer.Stop();
-        if (tag != "Bluetooth") StopScan();
+        if (tag == "Scenes") RebuildNewSceneLights();
     }
 
     /// <summary>Tags das páginas, pela ordem do menu (usado pelo auto-teste).</summary>
@@ -138,19 +130,17 @@ public partial class MainWindow : Window
     internal void Go(string tag) =>
         Nav.SelectedItem = Nav.Items.OfType<ListBoxItem>().First(i => (string)i.Tag == tag);
 
-    private void GoBluetooth_Click(object sender, RoutedEventArgs e) => Go("Bluetooth");
+    private void GoScenes_Click(object sender, RoutedEventArgs e) => Go("Scenes");
     private void GoHa_Click(object sender, RoutedEventArgs e) => Go("HomeAssistant");
 
     // ══ Lights ══════════════════════════════════════════════════════════════
 
     private void RebuildLights()
     {
-        Sync(_bleCards, _hub.BleLights.Cast<ILight>().ToList());
         Sync(_haCards, _hub.HaLights.Cast<ILight>().ToList());
-        BleHeader.Visibility = _bleCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         HaHeader.Visibility = _haCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        LightsEmpty.Visibility = _bleCards.Count + _haCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        RebuildBleDevices();
+        LightsEmpty.Visibility = _haCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RebuildNewSceneLights();
         foreach (var e in _entities) e.SetSelectedSilently(_hub.IsHaEntitySelected(e.EntityId));
     }
 
@@ -185,10 +175,8 @@ public partial class MainWindow : Window
                 _dirty.Clear();
                 _syncQueued = false;
             }
-            foreach (var c in _bleCards.Concat(_haCards))
+            foreach (var c in _haCards)
                 if (ids.Contains(c.Light.Id)) c.Sync();
-            foreach (var d in _bleDevices)
-                if (ids.Contains(d.Light.Id)) d.Sync();
         });
     }
 
@@ -218,148 +206,100 @@ public partial class MainWindow : Window
     private void AllOn_Click(object sender, RoutedEventArgs e) => _hub.SetAllPower(true);
     private void AllOff_Click(object sender, RoutedEventArgs e) => _hub.SetAllPower(false);
 
-    // ══ Bluetooth ═══════════════════════════════════════════════════════════
+    // ══ Scenes ════════════════════════════════════════════════════════════
 
-    private void RebuildBleDevices()
+    private void RebuildScenes()
     {
-        var existing = _bleDevices.ToDictionary(d => d.Light);
-        _bleDevices.Clear();
-        foreach (var l in _hub.BleLights)
-            _bleDevices.Add(existing.TryGetValue(l, out var vm) ? vm : new BleDeviceVm(l, _hub.Config));
-        BleEmpty.Visibility = _bleDevices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var s in _scan) s.Added = IsAdded(s.Address);
-    }
-
-    private bool IsAdded(string address) =>
-        _hub.BleLights.Any(l => string.Equals(l.Config.Address, address, StringComparison.OrdinalIgnoreCase));
-
-    private async void Scan_Click(object sender, RoutedEventArgs e)
-    {
-        if (_scanner.IsRunning) { StopScan(); return; }
-        var problem = await BleAdapter.ProblemAsync();
-        if (problem is not null)
+        var byId = _scenes.ToDictionary(v => v.Scene.Id);
+        _scenes.Clear();
+        foreach (var sc in _hub.Scenes)
         {
-            ScanStatus.Text = $"Can't scan: {problem}.";
-            return;
+            if (!byId.TryGetValue(sc.Id, out var vm)) vm = new SceneVm(sc);
+            vm.Refresh();
+            _scenes.Add(vm);
         }
-        _scan.Clear();
-        try
+        ScenesEmpty.Visibility = _scenes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        QuickScenesBar.Visibility = _scenes.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Lista de luzes para a nova cena (mantém o que estava marcado).</summary>
+    private void RebuildNewSceneLights()
+    {
+        var was = _newSceneLights.ToDictionary(c => c.Id, c => c.Include);
+        _newSceneLights.Clear();
+        foreach (var l in _hub.Lights)
         {
-            _scanner.Start();
-            _scanTimer.Start();
-            ScanButton.Content = "Stop";
-            ScanStatus.Text = "Scanning…";
+            bool isAction = (l.Features & LightFeatures.Action) != 0;
+            _newSceneLights.Add(new SceneLightChoice(l.Id, l.Name, isAction ? "Activate" : DescribeNow(l))
+            {
+                // Por omissão: todas as luzes; cenas/scripts do HA só se marcados
+                Include = was.TryGetValue(l.Id, out var inc) ? inc : !isAction,
+            });
         }
-        catch (Exception ex)
-        {
-            ScanStatus.Text = $"Can't scan: {ex.Message}";
-            Log.Write($"[BLE] scan: {ex}");
-        }
+        NewSceneEmpty.Visibility = _newSceneLights.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void StopScan()
+    private static string DescribeNow(ILight l)
     {
-        _scanTimer.Stop();
-        if (_scanner.IsRunning) _scanner.Stop();
-        ScanStopped(null);
+        if (!l.IsAvailable) return "unavailable";
+        var st = SceneEngine.CaptureLight(l);
+        if (!st.On) return "off";
+        var parts = new List<string> { "on" };
+        if (st.Brightness is { } b) parts.Add($"{Math.Round(b * 100.0 / 255)}%");
+        if (st.ColorTempKelvin is { } k) parts.Add($"{k} K");
+        if (st.Color is { } c) parts.Add(c);
+        if (st.Effect is { } e) parts.Add(e);
+        return string.Join(" · ", parts);
     }
 
-    private void ScanStopped(string? error)
+    private void CreateScene_Click(object sender, RoutedEventArgs e)
     {
-        if (ScanButton is null) return;   // janela não chegou a ser construída
-        _scanTimer.Stop();
-        ScanButton.Content = "Scan";
-        int hits = _scan.Count(s => s.LooksLikeLedHue);
-        ScanStatus.Text = error is not null ? $"Scan stopped: {error}" :
-            _scan.Count == 0 ? "" :
-            $"Found {_scan.Count} device(s), {hits} look like LED Hue controllers.";
+        var name = NewSceneName.Text.Trim();
+        if (name.Length == 0) { Info("Give the scene a name."); return; }
+        var ids = _newSceneLights.Where(c => c.Include).Select(c => c.Id).ToList();
+        if (ids.Count == 0) { Info("Choose at least one light."); return; }
+        _hub.CreateScene(name, ids);
+        NewSceneName.Text = "";
     }
 
-    private void OnAdvert(BleAdvert a)
+    private void ActivateScene_Click(object sender, RoutedEventArgs e)
     {
-        var vm = _scan.FirstOrDefault(s => s.Address == a.Address);
-        if (vm is null)
-        {
-            vm = new ScanResultVm(a.Address) { Added = IsAdded(a.Address) };
-            _scan.Add(vm);
-        }
-        if (!string.IsNullOrWhiteSpace(a.Name)) vm.Name = a.Name;
-        if (a.AddressType is "Public" or "Random")
-        {
-            vm.AddressType = a.AddressType;
-            if (vm.Added) _hub.LearnAddressType(a.Address, a.AddressType);
-        }
-        vm.Rssi = a.Rssi;
-        if (a.HasFfe0) vm.HasFfe0 = true;
-        CollectionViewSource.GetDefaultView(_scan).Refresh();
-        if (_scanner.IsRunning) ScanStatus.Text = $"Scanning… {_scan.Count(s => s.LooksLikeLedHue)} controller(s) found";
+        if (Vm<SceneVm>(sender) is not { } vm) return;
+        var missing = _hub.ActivateScene(vm.Scene);
+        if (missing > 0 && PageScenes.Visibility == Visibility.Visible)
+            Info($"{missing} light(s) in this scene are unavailable right now.");
     }
 
-    private void ScanFilter_Changed(object sender, RoutedEventArgs e)
+    private void UpdateScene_Click(object sender, RoutedEventArgs e)
     {
-        if (!_loading) CollectionViewSource.GetDefaultView(_scan).Refresh();
+        if (Vm<SceneVm>(sender) is not { } vm) return;
+        if (MessageBox.Show(this, $"Save the current state of the lights into \"{vm.Name}\"?", "Pine3 Light Control",
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        _hub.UpdateScene(vm.Scene);
     }
 
-    private void AddScanned_Click(object sender, RoutedEventArgs e)
+    private void DeleteScene_Click(object sender, RoutedEventArgs e)
     {
-        if (Vm<ScanResultVm>(sender) is not { } s) return;
-        var name = string.IsNullOrWhiteSpace(s.Name) ? s.Address : s.Name;
-        _hub.AddBleDevice(s.Address, name, s.AddressType);
-        s.Added = true;
+        if (Vm<SceneVm>(sender) is not { } vm) return;
+        if (MessageBox.Show(this, $"Delete the scene \"{vm.Name}\"?", "Pine3 Light Control",
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        _hub.DeleteScene(vm.Scene);
     }
 
-    private void BleConnect_Click(object sender, RoutedEventArgs e)
+    private void SceneUp_Click(object sender, RoutedEventArgs e)
     {
-        if (Vm<BleDeviceVm>(sender) is not { } d) return;
-        d.Light.Start();
-        d.Sync();
+        if (Vm<SceneVm>(sender) is { } vm) _hub.MoveScene(vm.Scene, -1);
     }
 
-    private async void BleDisconnect_Click(object sender, RoutedEventArgs e)
+    private void SceneDown_Click(object sender, RoutedEventArgs e)
     {
-        if (Vm<BleDeviceVm>(sender) is not { } d) return;
-        await d.Light.StopAsync();
-        d.Sync();
+        if (Vm<SceneVm>(sender) is { } vm) _hub.MoveScene(vm.Scene, +1);
     }
 
-    private async void BleRemove_Click(object sender, RoutedEventArgs e)
+    private void SceneName_LostFocus(object sender, RoutedEventArgs e)
     {
-        if (Vm<BleDeviceVm>(sender) is not { } d) return;
-        if (MessageBox.Show(this, $"Remove {d.Name}?", "Pine3 Light Control", MessageBoxButton.YesNo,
-                MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        await _hub.RemoveBleDeviceAsync(d.Light);
+        if (sender is TextBox { DataContext: SceneVm vm } tb) _hub.RenameScene(vm.Scene, tb.Text);
     }
-
-    private void BleRename_Click(object sender, RoutedEventArgs e)
-    {
-        if (Vm<BleDeviceVm>(sender) is not { } d || string.IsNullOrWhiteSpace(d.Name)) return;
-        if (!d.IsConnected) { Info("Connect to the controller first."); return; }
-        d.Light.Rename(d.Name);
-        Info("Name sent. The controller shows the new name after it restarts (power-cycle it).");
-    }
-
-    private void BleApplyStrip_Click(object sender, RoutedEventArgs e)
-    {
-        if (Vm<BleDeviceVm>(sender) is not { } d) return;
-        if (!d.IsConnected) { Info("Connect to the controller first."); return; }
-        if (!int.TryParse(d.PixelCount, out var px) || px < 1 || px > Sp110e.MaxPixels)
-        {
-            Info($"Number of LEDs must be between 1 and {Sp110e.MaxPixels}.");
-            return;
-        }
-        d.Light.ApplyStripSettings(d.IcModel, d.RgbOrder, px);
-    }
-
-    private async void BleDiagnose_Click(object sender, RoutedEventArgs e)
-    {
-        if (Vm<BleDeviceVm>(sender) is not { } d) return;
-        DiagCard.Visibility = Visibility.Visible;
-        DiagText.Text = "Reading services…";
-        try { DiagText.Text = await BleAdapter.DescribeAsync(d.Address, d.Light.Config.AddressType); }
-        catch (Exception ex) { DiagText.Text = ex.Message; }
-    }
-
-    private void DiagClose_Click(object sender, RoutedEventArgs e) => DiagCard.Visibility = Visibility.Collapsed;
 
     private void Info(string text) =>
         MessageBox.Show(this, text, "Pine3 Light Control", MessageBoxButton.OK, MessageBoxImage.Information);

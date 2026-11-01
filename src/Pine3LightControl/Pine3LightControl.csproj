@@ -2,10 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- SDK 22621 para as APIs de Bluetooth LE do Windows 11 (parâmetros de ligação),
-         usadas só se existirem; continua a correr no Windows 10 2004+ (19041) -->
-    <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
-    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>        <!-- NotifyIcon da tray e ColorDialog -->
     <ImplicitUsings>disable</ImplicitUsings>       <!-- evita ambiguidades WPF/WinForms -->
@@ -14,7 +11,7 @@
     <RootNamespace>Pine3LightControl</RootNamespace>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.8</Version>
+    <Version>0.2.0</Version>
     <Product>Pine3 Light Control</Product>
     <Company>magnificent3</Company>
     <Copyright>made by magnificent3</Copyright>

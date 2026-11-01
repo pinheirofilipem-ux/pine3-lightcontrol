@@ -149,10 +149,10 @@
                         <TextBlock Text="Lights" />
                     </StackPanel>
                 </ListBoxItem>
-                <ListBoxItem Tag="Bluetooth">
+                <ListBoxItem Tag="Scenes">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE702;" Width="28" VerticalAlignment="Center" />
-                        <TextBlock Text="Bluetooth" />
+                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE734;" Width="28" VerticalAlignment="Center" />
+                        <TextBlock Text="Scenes" />
                     </StackPanel>
                 </ListBoxItem>
                 <ListBoxItem Tag="HomeAssistant">
@@ -190,24 +190,36 @@
                         <TextBlock Text="Lights" Style="{StaticResource PageTitle}" />
                     </DockPanel>
 
+                    <!-- Cenas: um clique ativa -->
+                    <DockPanel x:Name="QuickScenesBar" Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right" Content="Edit scenes" Click="GoScenes_Click" VerticalAlignment="Top" />
+                        <ItemsControl x:Name="QuickScenes">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:SceneVm}">
+                                    <Button Margin="0,0,8,8" Padding="14,6" Click="ActivateScene_Click" ToolTip="{Binding Details}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE734;" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Name}" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </DockPanel>
+
                     <Border x:Name="LightsEmpty" Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Text="No lights yet" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
-                                       Text="Add a Bluetooth controller (the ones you use with the LED Hue app), or choose which Home Assistant entities to show here." />
+                                       Text="Connect Home Assistant and choose which lights, switches and scenes to show here." />
                             <WrapPanel>
-                                <Button Margin="0,0,8,0" Content="Add Bluetooth controller" Click="GoBluetooth_Click" />
                                 <Button Content="Connect Home Assistant" Click="GoHa_Click" />
                             </WrapPanel>
                         </StackPanel>
                     </Border>
-
-                    <TextBlock x:Name="BleHeader" Text="Bluetooth" Style="{StaticResource CardTitle}" />
-                    <ItemsControl x:Name="BleLightsList" ItemTemplate="{StaticResource LightCard}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                    </ItemsControl>
 
                     <TextBlock x:Name="HaHeader" Text="Home Assistant" Style="{StaticResource CardTitle}" Margin="0,8,0,8" />
                     <ItemsControl x:Name="HaLightsList" ItemTemplate="{StaticResource LightCard}">
@@ -218,130 +230,62 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- ── Bluetooth ── -->
-            <ScrollViewer x:Name="PageBluetooth" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+            <!-- ── Scenes ── -->
+            <ScrollViewer x:Name="PageScenes" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="0,0,8,0">
-                    <TextBlock Text="Bluetooth" Style="{StaticResource PageTitle}" />
+                    <TextBlock Text="Scenes" Style="{StaticResource PageTitle}" />
 
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Text="Find controllers" Style="{StaticResource CardTitle}" />
+                            <TextBlock Text="New scene" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
-                                       Text="Supports the Sperll SP110E / SP105E family (LED Hue app). Close the LED Hue app on your phone first: these controllers accept only one connection at a time." />
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <Button x:Name="ScanButton" Content="Scan" Click="Scan_Click" MinWidth="90" />
-                                <CheckBox x:Name="ScanAll" Content="Show all devices" Margin="16,0,0,0"
-                                          VerticalAlignment="Center" Checked="ScanFilter_Changed" Unchecked="ScanFilter_Changed" />
-                                <TextBlock x:Name="ScanStatus" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="16,0,0,0" />
-                            </StackPanel>
-                            <ListView x:Name="ScanList" MaxHeight="260" BorderThickness="0">
-                                <ListView.View>
-                                    <GridView>
-                                        <GridViewColumn Header="Name" Width="200">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate DataType="{x:Type vm:ScanResultVm}">
-                                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                        <GridViewColumn Header="Address" Width="150" DisplayMemberBinding="{Binding Address}" />
-                                        <GridViewColumn Header="Signal" Width="80" DisplayMemberBinding="{Binding Signal}" />
-                                        <GridViewColumn Header="" Width="150" DisplayMemberBinding="{Binding Hint}" />
-                                        <GridViewColumn Header="" Width="90">
-                                            <GridViewColumn.CellTemplate>
-                                                <DataTemplate DataType="{x:Type vm:ScanResultVm}">
-                                                    <Button Content="Add" Click="AddScanned_Click" IsEnabled="{Binding CanAdd}" />
-                                                </DataTemplate>
-                                            </GridViewColumn.CellTemplate>
-                                        </GridViewColumn>
-                                    </GridView>
-                                </ListView.View>
-                            </ListView>
+                                       Text="Set the lights the way you want them (on the Lights page), tick the ones that belong to the scene, give it a name and save. Activating the scene puts each light back exactly like this." />
+                            <DockPanel Margin="0,0,0,10">
+                                <Button DockPanel.Dock="Right" Content="Save from current state" Margin="8,0,0,0" Click="CreateScene_Click" />
+                                <TextBox x:Name="NewSceneName" ToolTip="Scene name, e.g. Movie, Work, Gaming" />
+                            </DockPanel>
+                            <TextBlock x:Name="NewSceneEmpty" Style="{StaticResource Muted}" Visibility="Collapsed"
+                                       Text="No lights yet: choose Home Assistant entities first." />
+                            <ItemsControl x:Name="NewSceneLights">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:SceneLightChoice}">
+                                        <DockPanel Margin="0,2">
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding Now}" Style="{StaticResource Muted}"
+                                                       VerticalAlignment="Center" Margin="12,0,0,0" />
+                                            <CheckBox IsChecked="{Binding Include}" Content="{Binding Name}" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Text="Your controllers" Style="{StaticResource CardTitle}" Margin="0,4,0,8" />
-                    <TextBlock x:Name="BleEmpty" Style="{StaticResource Muted}" Margin="0,0,0,12"
-                               Text="None yet. Scan and press Add." />
-                    <ItemsControl x:Name="BleDevicesList">
+                    <TextBlock Text="Your scenes" Style="{StaticResource CardTitle}" Margin="0,4,0,8" />
+                    <TextBlock x:Name="ScenesEmpty" Style="{StaticResource Muted}" Margin="0,0,0,12" Text="None yet." />
+                    <ItemsControl x:Name="ScenesList">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type vm:BleDeviceVm}">
+                            <DataTemplate DataType="{x:Type vm:SceneVm}">
                                 <Border Style="{StaticResource Card}">
-                                    <StackPanel>
-                                        <DockPanel Margin="0,0,0,10">
-                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
-                                                <Button Content="Connect" Margin="0,0,8,0" Click="BleConnect_Click" />
-                                                <Button Content="Disconnect" Margin="0,0,8,0" Click="BleDisconnect_Click" />
-                                                <Button Content="Remove" Click="BleRemove_Click" />
-                                            </StackPanel>
-                                            <StackPanel>
-                                                <TextBlock FontSize="15" FontWeight="SemiBold">
-                                                    <Run Text="{Binding Name, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Address, Mode=OneWay}" FontWeight="Normal" FontSize="12" />
-                                                </TextBlock>
-                                                <TextBlock Text="{Binding Status}" Style="{StaticResource Muted}" />
-                                            </StackPanel>
-                                        </DockPanel>
-
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="220" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-
-                                            <TextBlock Text="Name" Style="{StaticResource FieldLabel}" />
-                                            <TextBox Grid.Column="1" Margin="0,0,0,10"
-                                                     Text="{Binding Name, UpdateSourceTrigger=LostFocus}" />
-                                            <Button Grid.Column="2" Content="Write name to controller" Margin="8,0,0,10"
-                                                    HorizontalAlignment="Left" Click="BleRename_Click"
-                                                    ToolTip="Changes the Bluetooth name the controller advertises (ASCII, up to 20 characters)" />
-
-                                            <TextBlock Grid.Row="1" Text="LED chip (IC)" Style="{StaticResource FieldLabel}" />
-                                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,10"
-                                                      ItemsSource="{Binding IcModels}" SelectedIndex="{Binding IcModel}" MaxDropDownHeight="320" />
-
-                                            <TextBlock Grid.Row="2" Text="Color order" Style="{StaticResource FieldLabel}" />
-                                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,10"
-                                                      ItemsSource="{Binding RgbOrders}" SelectedIndex="{Binding RgbOrder}" />
-
-                                            <TextBlock Grid.Row="3" Text="Number of LEDs" Style="{StaticResource FieldLabel}" />
-                                            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" Text="{Binding PixelCount}" />
-                                            <Button Grid.Row="3" Grid.Column="2" Content="Send to controller" Margin="8,0,0,10"
-                                                    HorizontalAlignment="Left" Click="BleApplyStrip_Click" />
-
-                                            <StackPanel Grid.Row="4" Grid.ColumnSpan="3">
-                                                <TextBlock Text="{Binding DeviceInfo}" Style="{StaticResource Muted}" Margin="0,0,0,8" />
-                                                <WrapPanel>
-                                                    <CheckBox Content="Connect automatically" IsChecked="{Binding AutoConnect}" Margin="0,0,16,0" />
-                                                    <Button Content="Show GATT services" Click="BleDiagnose_Click"
-                                                            ToolTip="Lists the device's Bluetooth services (for troubleshooting)" />
-                                                </WrapPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                            <Button Content="Activate" Margin="0,0,8,0" Click="ActivateScene_Click" />
+                                            <Button Content="Save current state" Margin="0,0,8,0" Click="UpdateScene_Click"
+                                                    ToolTip="Replace the saved state with how the same lights are now" />
+                                            <Button Content="&#xE70E;" FontFamily="{StaticResource Glyphs}" Margin="0,0,4,0" Click="SceneUp_Click" ToolTip="Move up" />
+                                            <Button Content="&#xE70D;" FontFamily="{StaticResource Glyphs}" Margin="0,0,8,0" Click="SceneDown_Click" ToolTip="Move down" />
+                                            <Button Content="&#xE74D;" FontFamily="{StaticResource Glyphs}" Click="DeleteScene_Click" ToolTip="Delete" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,16,0">
+                                            <TextBox Text="{Binding Name, Mode=OneWay}" LostFocus="SceneName_LostFocus" MaxWidth="320"
+                                                     HorizontalAlignment="Left" MinWidth="200" FontWeight="SemiBold" ToolTip="Rename" />
+                                            <TextBlock Text="{Binding Summary}" Style="{StaticResource Muted}" Margin="0,6,0,4" />
+                                            <TextBlock Text="{Binding Details}" Style="{StaticResource Muted}" FontSize="12" />
+                                        </StackPanel>
+                                    </DockPanel>
                                 </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-
-                    <Border x:Name="DiagCard" Style="{StaticResource Card}" Visibility="Collapsed">
-                        <StackPanel>
-                            <DockPanel>
-                                <Button DockPanel.Dock="Right" Content="Close" Click="DiagClose_Click" />
-                                <TextBlock Text="Diagnostics" Style="{StaticResource CardTitle}" />
-                            </DockPanel>
-                            <TextBox x:Name="DiagText" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
-                                     TextWrapping="NoWrap" MaxHeight="300" VerticalScrollBarVisibility="Auto"
-                                     HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </ScrollViewer>
 
@@ -489,7 +433,7 @@
                         <StackPanel>
                             <TextBlock Text="What it does" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource Muted}"
-                                       Text="Controls Bluetooth LED controllers from the LED Hue app (Sperll SP110E / SP105E) directly from this PC, and the lights, switches and scenes you choose from Home Assistant — all from one panel and the tray." />
+                                       Text="Controls the lights, switches and scenes you choose from Home Assistant, and combines them into scenes — all from one panel and the tray." />
                         </StackPanel>
                     </Border>
                 </StackPanel>

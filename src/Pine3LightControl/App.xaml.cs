@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using Pine3LightControl.Bluetooth;
 using Pine3LightControl.Core;
 using Pine3LightControl.Core.Lights;
 
@@ -65,7 +64,7 @@ public partial class App : Application
         config.StartWithWindows = StartupManager.IsEnabled();
         Appearance.Apply(config.Appearance);
 
-        Hub = new LightHub(config, d => new WinBleLink(d, config.Save));
+        Hub = new LightHub(config);
         Tray = new TrayIcon(Hub, ShowMain, Quit);
         await Hub.StartAsync();
 
@@ -89,14 +88,18 @@ public partial class App : Application
             Log.Write($"[SelfTest] {typeof(App).Assembly.GetName().Version}");
             Dpapi.Install();
             var config = new AppConfig();
-            config.BleDevices.Add(new BleDeviceConfig { Address = "AA:BB:CC:DD:EE:FF", Name = "Test strip", AutoConnect = false });
             config.HomeAssistant.Entities.Add("light.test");
+            config.Scenes.Add(new Core.Scenes.Scene
+            {
+                Name = "Test scene",
+                Lights = { new Core.Scenes.SceneLightState { LightId = "ha:light.test", Name = "Test", On = true, Brightness = 128 } },
+            });
             config.HomeAssistant.Token = "token";
             if (config.HomeAssistant.Token != "token") throw new Exception("DPAPI round-trip failed");
             config.HomeAssistant.Token = "";
             Appearance.Apply(config.Appearance);
 
-            Hub = new LightHub(config, d => new WinBleLink(d, () => { }));
+            Hub = new LightHub(config);
             await Hub.StartAsync();
             Tray = new TrayIcon(Hub, () => { }, () => { });
             _main = new MainWindow(Hub);
@@ -108,6 +111,7 @@ public partial class App : Application
                 Log.Write($"[SelfTest] página {tag} ok");
             }
             foreach (var l in Hub.Lights) { l.SetPower(true); l.SetBrightness(100); }
+            foreach (var sc in Hub.Scenes) Hub.ActivateScene(sc);
             await Task.Delay(300);
             _main.CloseForQuit();
             Tray.Dispose();

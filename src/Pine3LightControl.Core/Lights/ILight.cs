@@ -1,6 +1,9 @@
 namespace Pine3LightControl.Core.Lights;
 
-public enum LightSource { Bluetooth, HomeAssistant }
+public enum LightSource { HomeAssistant }
+
+/// <summary>Modo de cor em uso (para as cenas guardarem o que interessa).</summary>
+public enum ActiveColorMode { None, Rgb, ColorTemp }
 
 [Flags]
 public enum LightFeatures
@@ -42,6 +45,7 @@ public interface ILight
     int Speed { get; }
     /// <summary>Canal branco (RGBW), 0–255.</summary>
     int White { get; }
+    ActiveColorMode ColorMode { get; }
 
     /// <summary>Estado mudou (pode vir de qualquer thread).</summary>
     event Action? Changed;
@@ -76,6 +80,7 @@ public abstract class LightBase : ILight
     public virtual IReadOnlyList<string> Effects => Array.Empty<string>();
     public int Speed { get; protected set; } = 128;
     public int White { get; protected set; }
+    public ActiveColorMode ColorMode { get; protected set; } = ActiveColorMode.None;
 
     public event Action? Changed;
     protected void RaiseChanged() { try { Changed?.Invoke(); } catch (Exception e) { Log.Write($"[Light] {e.Message}"); } }

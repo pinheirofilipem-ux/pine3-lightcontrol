@@ -60,6 +60,12 @@ public sealed class HaLight : LightBase
             if (e.Int("min_color_temp_kelvin") is { } mn) MinKelvin = mn;
             if (e.Int("max_color_temp_kelvin") is { } mx) MaxKelvin = mx;
             if (e.Int("color_temp_kelvin") is { } k) ColorTempKelvin = k;
+            ColorMode = e.Str("color_mode") switch
+            {
+                "color_temp" => ActiveColorMode.ColorTemp,
+                "hs" or "xy" or "rgb" or "rgbw" or "rgbww" => ActiveColorMode.Rgb,
+                _ => ActiveColorMode.None,
+            };
             var list = e.StrList("effect_list");
             if (!list.SequenceEqual(_effects)) _effects = list;   // mesma instância → a UI não perde a seleção
             var eff = e.Str("effect");

@@ -5,20 +5,6 @@ namespace Pine3LightControl.Core;
 
 public enum AppearanceMode { System, Light, Dark }
 
-/// <summary>Controlador Bluetooth adicionado pelo utilizador.</summary>
-public sealed class BleDeviceConfig
-{
-    /// <summary>Endereço "AA:BB:CC:DD:EE:FF".</summary>
-    public string Address { get; set; } = "";
-    public string Name { get; set; } = "";
-    public bool AutoConnect { get; set; } = true;
-    /// <summary>
-    /// Tipo de endereço BLE visto no scan: "Public" ou "Random" ("" = desconhecido,
-    /// a ligação experimenta os dois). Ligar com o tipo errado deixa o Windows à espera.
-    /// </summary>
-    public string AddressType { get; set; } = "";
-}
-
 public sealed class HomeAssistantConfig
 {
     /// <summary>Ex.: http://homeassistant.local:8123</summary>
@@ -48,8 +34,9 @@ public sealed class AppConfig
     public bool StartWithWindows { get; set; }
     public bool StartMinimized { get; set; } = true;
     public bool TrayHintShown { get; set; }
-    public List<BleDeviceConfig> BleDevices { get; set; } = new();
     public HomeAssistantConfig HomeAssistant { get; set; } = new();
+    /// <summary>Cenas: estado guardado de várias luzes, ativado de uma vez.</summary>
+    public List<Scenes.Scene> Scenes { get; set; } = new();
 
     // ── Persistência ─────────────────────────────────────────────────────────
     private static readonly JsonSerializerOptions Json = new()

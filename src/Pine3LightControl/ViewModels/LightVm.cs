@@ -26,8 +26,8 @@ public sealed class LightVm : Observable
     public string Name => Light.Name;
     public string Status => Light.StatusText;
     public bool IsAvailable => Light.IsAvailable;
-    public string SourceText => Light.Source == LightSource.Bluetooth ? "Bluetooth" : "Home Assistant";
-    public string SourceGlyph => Light.Source == LightSource.Bluetooth ? "" : "";
+    public string SourceText => "Home Assistant";
+    public string SourceGlyph => "\uE80F";
     public double CardOpacity => IsAvailable ? 1.0 : 0.6;
 
     // ── Capacidades ──

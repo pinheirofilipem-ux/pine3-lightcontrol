@@ -98,7 +98,7 @@ public class HaClientTests
         cfg.HomeAssistant.Url = ha.Url;
         cfg.HomeAssistant.Token = FakeHomeAssistant.Token;
         cfg.HomeAssistant.Entities.Add("switch.plug");
-        await using var hub = new LightHub(cfg, _ => new FakeLink());
+        await using var hub = new LightHub(cfg);
         int listChanges = 0;
         hub.ListChanged += () => listChanges++;
         await hub.StartAsync();
