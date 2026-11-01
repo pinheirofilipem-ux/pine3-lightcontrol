@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Pine3LightControl.Core;
 using Pine3LightControl.Core.Lights;
@@ -57,23 +58,30 @@ internal static class PcRgbService
         if (cfg.Mouse)
         {
             // Recetor LIGHTSPEED: coleção HID++ dos relatórios longos (20 bytes)
-            var hid = HidSharpLink.Open(LogitechHidpp.Vid,
+            var raw = HidSharpLink.Open(LogitechHidpp.Vid,
                 d => d.ProductID == LogitechHidpp.ReceiverPid && d.GetMaxOutputReportLength() == LogitechHidpp.LongLen,
-                "Logitech LIGHTSPEED receiver", out _, out var problem);
-            if (hid is null) MouseStatus = $"Not found — {problem}";
+                "Logitech LIGHTSPEED receiver", out var dev, out var problem);
+            if (raw is null) MouseStatus = $"Not found — {problem}";
             else
             {
-                var found = LogitechHidpp.Detect(hid);
+                Log.Write($"[Mouse] recetor (longo): {HidSharpLink.Describe(dev!)}");
+                // Coleção curta (7 bytes) da mesma interface: é por lá que chegam os erros
+                var shortDev = HidSharpLink.FindAll(LogitechHidpp.Vid, d => d.ProductID == LogitechHidpp.ReceiverPid &&
+                    d.GetMaxOutputReportLength() == 7).FirstOrDefault();
+                var shortLink = shortDev is null ? null : HidSharpLink.TryOpen(shortDev);
+                if (shortDev is not null) Log.Write($"[Mouse] recetor (curto): {HidSharpLink.Describe(shortDev)} aberto={shortLink is not null}");
+                var link = new PairedHid(raw, shortLink);
+                var found = LogitechHidpp.Detect(new LoggingHid(link, "Mouse"));
                 if (found is null)
                 {
-                    hid.Dispose();
-                    MouseStatus = "Receiver found, but no RGB mouse answered (asleep, off, or G HUB open?)";
+                    link.Dispose();
+                    MouseStatus = "Receiver found, but the mouse didn't answer — move it (to wake it up) and press Save and detect again. Close G HUB.";
                 }
                 else
                 {
-                    var (dev, feature, zones) = found.Value;
-                    lights.Add(new LogitechMouseLight(hid, dev, feature, zones));
-                    MouseStatus = $"Logitech mouse found ({zones.Count} zone(s), receiver slot {dev})";
+                    var (idx, feature, zones) = found.Value;
+                    lights.Add(new LogitechMouseLight(link, idx, feature, zones));
+                    MouseStatus = $"Logitech mouse found ({zones.Count} zone(s), receiver slot {idx})";
                 }
             }
         }
@@ -81,22 +89,28 @@ internal static class PcRgbService
 
         if (cfg.Keyboard)
         {
-            var hid = HidSharpLink.Open(DuckyOkM.Vid,
-                d => d.ProductID == DuckyOkM.Pid && HidSharpLink.HasUsage(d, 0xFF60, 0x61),
-                "Ducky OK-M VIA interface", out _, out var problem);
-            if (hid is null) KeyboardStatus = $"Not found — {problem}";
+            // O OK-M tem várias interfaces "vendor-defined": experimenta cada uma até o VIA responder
+            var candidates = HidSharpLink.FindAll(DuckyOkM.Vid, d => d.ProductID == DuckyOkM.Pid &&
+                (HidSharpLink.HasUsage(d, 0xFF60, 0x61) || d.GetMaxOutputReportLength() is 33 or 65));
+            if (candidates.Count == 0) KeyboardStatus = "Not found — connect the keyboard with the USB cable";
             else
             {
-                var zones = DuckyOkM.Create(hid, out var p2);
-                if (zones is null)
+                KeyboardStatus = "Found, but no interface answered the VIA protocol (close the VIA app)";
+                foreach (var d in candidates.OrderByDescending(c => HidSharpLink.HasUsage(c, 0xFF60, 0x61)))
                 {
-                    hid.Dispose();
-                    KeyboardStatus = $"Found, but {p2}";
-                }
-                else
-                {
+                    Log.Write($"[Keyboard] a experimentar {HidSharpLink.Describe(d)}");
+                    var raw = HidSharpLink.TryOpen(d);
+                    if (raw is null) { Log.Write("[Keyboard] não abriu"); continue; }
+                    var zones = DuckyOkM.Create(new LoggingHid(raw, "Keyboard") { Limit = 20 }, out var p2);
+                    if (zones is null)
+                    {
+                        Log.Write($"[Keyboard] {p2}");
+                        raw.Dispose();
+                        continue;
+                    }
                     lights.AddRange(zones);
                     KeyboardStatus = "Ducky OK-M 75 found (keys + side light)";
+                    break;
                 }
             }
         }

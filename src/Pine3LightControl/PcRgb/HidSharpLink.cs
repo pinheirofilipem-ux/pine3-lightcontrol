@@ -48,6 +48,45 @@ internal sealed class HidSharpLink : IHidLink
         }
     }
 
+    /// <summary>Todos os dispositivos HID que cumpram o filtro (ex.: interfaces de um teclado).</summary>
+    public static System.Collections.Generic.List<HidDevice> FindAll(int vid, Func<HidDevice, bool> match)
+    {
+        try
+        {
+            return DeviceList.Local.GetHidDevices(vid).Where(d =>
+            {
+                try { return match(d); } catch { return false; }
+            }).ToList();
+        }
+        catch { return new(); }
+    }
+
+    public static HidSharpLink? TryOpen(HidDevice d)
+    {
+        try
+        {
+            if (!d.TryOpen(out HidStream stream)) return null;
+            return new HidSharpLink(stream, d.GetMaxOutputReportLength());
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Descrição curta para o log (interface, tamanhos, usages).</summary>
+    public static string Describe(HidDevice d)
+    {
+        string usages = "";
+        try
+        {
+            usages = string.Join(",", d.GetReportDescriptor().DeviceItems
+                .SelectMany(i => i.Usages.GetAllValues()).Select(u => u.ToString("X8")).Distinct());
+        }
+        catch { }
+        var path = d.DevicePath;
+        int mi = path.IndexOf("mi_", StringComparison.OrdinalIgnoreCase);
+        var iface = mi >= 0 ? path.Substring(mi, Math.Min(12, path.Length - mi)) : "?";
+        return $"{iface} out={d.GetMaxOutputReportLength()} in={d.GetMaxInputReportLength()} usages={usages}";
+    }
+
     /// <summary>Tem a usage page/usage indicada no descritor (ex.: 0xFF60/0x61 do VIA).</summary>
     public static bool HasUsage(HidDevice d, uint usagePage, uint usage)
     {

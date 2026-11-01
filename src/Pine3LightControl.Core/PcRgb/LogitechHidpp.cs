@@ -19,7 +19,7 @@ public static class LogitechHidpp
     public const byte CmdGetFeature = 0x01;     // root (índice 0), função 0
     public const byte CmdGetCount = 0x00, CmdGetInfo = 0x10, CmdGetControl = 0x20, CmdSetEffect = 0x30;
     public const ushort FxOff = 0x0000, FxOn = 0x0001, FxSpectrum = 0x0003, FxBreathing = 0x000A;
-    public const int TimeoutMs = 300;
+    public const int TimeoutMs = 500;
 
     public static byte[] Request(byte device, byte feature, byte command, params byte[] data)
     {
@@ -40,6 +40,7 @@ public static class LogitechHidpp
             if (r.Length >= 4 && r[0] == LongReport && r[1] == request[1] && r[2] == request[2] && r[3] == request[3])
                 return r;
             if (r.Length >= 4 && r[1] == request[1] && r[2] == 0xFF) return null;   // erro HID++ 2.0
+            if (r.Length >= 4 && r[0] == 0x10 && r[1] == request[1] && r[2] == 0x8F) return null;   // erro HID++ 1.0 (coleção curta)
         }
         return null;
     }
