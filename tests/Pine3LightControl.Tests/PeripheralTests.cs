@@ -254,6 +254,35 @@ public class PeripheralTests
     }
 
     [Fact]
+    public async Task Logitech_8071_retakes_control_after_the_mouse_fails()
+    {
+        // Rato a dormir: o primeiro SET falha; depois de novo CONTROL volta a aceitar
+        var rx = new FakeReceiver8071();
+        bool asleep = false;
+        var hid = new ScriptedHid(w =>
+        {
+            if (asleep && w[3] == LogitechHidpp.Cmd2SetEffect)
+            {
+                asleep = false;   // "acorda" com o pedido; o CONTROL seguinte é aceite
+                return new byte[] { 0x10, w[1], 0x8F, w[2], w[3], 0x05, 0x00 };
+            }
+            return rx.Reply(w);
+        });
+        var (dev, feature, zones, page) = LogitechHidpp.Detect(hid)!.Value;
+        var mouse = new LogitechMouseLight(hid, dev, feature, zones, page: page);
+        mouse.SetColor(new RgbColor(255, 0, 0));
+        await mouse.WhenSent();
+        rx.Sent.Clear();
+
+        asleep = true;
+        mouse.SetColor(new RgbColor(0, 0, 255));
+        await mouse.WhenSent();
+        Assert.Equal(LogitechHidpp.Cmd2Control, rx.Sent[0][3]);          // voltou a pedir o controlo
+        Assert.Equal(2, rx.Sent.Count(w => w[3] == LogitechHidpp.Cmd2SetEffect));   // nova tentativa + zona 1
+        Assert.Equal("2 zone(s)", mouse.StatusText);
+    }
+
+    [Fact]
     public void Logitech_detect_reports_features_when_no_rgb()
     {
         // Responde à raiz sem RGB; IFeatureSet com 2 funcionalidades

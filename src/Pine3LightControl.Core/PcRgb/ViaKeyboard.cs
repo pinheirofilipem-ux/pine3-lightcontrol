@@ -217,7 +217,7 @@ public static class DuckyOkM
 {
     public const ushort Vid = 0x28E9;
     public const ushort Pid = 0x31C6;
-    /// <summary>Recetor 2.4 GHz do OK-M 75 (identificado no PC do utilizador; não é da Ducky).</summary>
+    /// <summary>Recetor 2.4 GHz do OK-M 75 (não passa o VIA: só serve para avisar que é preciso o cabo).</summary>
     public const ushort DongleVid = 0x056D, DonglePid = 0xC077;
     public const byte ChannelUnderglow = 2;   // id_qmk_rgblight_*
     public const byte ChannelKeys = 3;        // id_qmk_rgb_matrix_*

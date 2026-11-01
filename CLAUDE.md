@@ -21,8 +21,9 @@ HA, com a integração em `custom_components/sp110e`.
   Mutex global `Global\Access_SMBUS.HTP.Method` partilhado com o Pine3 Monitor/LHM.
   Rato: Logitech HID++ 2.0 pelo recetor 046D:C539 (coleção de 20 bytes), feature 0x8070
   (SET_EFFECT 0x30 sem persistência) ou 0x8071 (o G903 HERO: CONTROL 0x50 01 03 05 e SET 0x10
-  com data[12]=1, como o OpenRGB). Teclado: Ducky OK-M 75 (28E9:31C6) por VIA 12 (usage page
-  0xFF60, relatórios de 64 bytes + report ID; sem fios pelo recetor 056D:C077, ainda por confirmar), canal 3 = teclas, 2 = lateral; nunca envia 0x09 (gravar na EEPROM).
+  com data[12]=1, como o OpenRGB; o CONTROL repete-se após 20 s parado ou falha, porque o rato
+  adormece e o firmware retoma o RGB). Teclado: Ducky OK-M 75 (28E9:31C6) por VIA 12 (usage page
+  0xFF60, relatórios de 64 bytes + report ID; só com fio: o recetor 2.4 GHz 056D:C077 não passa o VIA), canal 3 = teclas, 2 = lateral; nunca envia 0x09 (gravar na EEPROM).
 - A app corre como administrador (requireAdministrator) e arranca por tarefa agendada; o
   instalador é para todo o sistema. PawnIOLib.dll + SmbusI801.bin vêm de `tools/get-pawnio.ps1`.
 - Cenas: `Core/Scenes` (`SceneEngine.Capture/Apply`), guardadas em `AppConfig.Scenes`.

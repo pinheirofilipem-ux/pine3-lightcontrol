@@ -185,6 +185,13 @@ public sealed class LogitechMouseLight : LightBase, IDisposable
     private readonly byte _device, _feature;
     private readonly ushort _page;
     private bool _controlSent;
+    private DateTime _lastOk = DateTime.MinValue;
+    private bool _lastFailed;
+    /// <summary>
+    /// O rato adormece parado e, ao acordar, o firmware volta a mandar no RGB: depois deste
+    /// tempo sem envios (ou depois de uma falha) volta a pedir-se o controlo (CONTROL 0x8071).
+    /// </summary>
+    public static TimeSpan RetakeControlAfter { get; set; } = TimeSpan.FromSeconds(20);
     private readonly IReadOnlyList<LogitechHidpp.Zone> _zones;
     private readonly SendQueue _queue = new(TimeSpan.FromMilliseconds(40));
     private string _status;
@@ -234,9 +241,10 @@ public sealed class LogitechMouseLight : LightBase, IDisposable
         byte pct = (byte)Math.Clamp((int)Math.Round(Brightness * 100.0 / 255), 1, 100);
         _queue.Post("fx", () =>
         {
-            int missing = 0;
-            if (_page == LogitechHidpp.FeatureRgbEffects2 && !_controlSent)
-                _controlSent = LogitechHidpp.Transact(_hid, LogitechHidpp.SoftwareControl8071(_device, _feature)) is not null;
+            int missing = 0, failed = 0;
+            bool v2 = _page == LogitechHidpp.FeatureRgbEffects2;
+            if (v2 && (!_controlSent || _lastFailed || DateTime.UtcNow - _lastOk > RetakeControlAfter))
+                _controlSent = TakeControl();
             foreach (var z in _zones)
             {
                 if (!z.Effects.TryGetValue(type, out var fx))
@@ -244,13 +252,23 @@ public sealed class LogitechMouseLight : LightBase, IDisposable
                     missing++;
                     continue;
                 }
-                var r = LogitechHidpp.Transact(_hid, LogitechHidpp.SetEffect(_device, _feature, z.Index, fx, type, c, 3000, pct, _page));
-                if (r is null) missing++;
+                var packet = LogitechHidpp.SetEffect(_device, _feature, z.Index, fx, type, c, 3000, pct, _page);
+                var r = LogitechHidpp.Transact(_hid, packet);
+                if (r is null && v2 && TakeControl())
+                    r = LogitechHidpp.Transact(_hid, packet);   // acordou entretanto: nova tentativa
+                if (r is null) failed++;
             }
+            if (failed > 0 && !_lastFailed) Log.Write($"[Mouse] {failed} zona(s) sem resposta ao efeito {type:X}");
+            _lastFailed = failed > 0;
+            if (failed == 0) _lastOk = DateTime.UtcNow;
+            missing += failed;
             _status = missing == 0 ? $"{_zones.Count} zone(s)" : "Mouse did not answer (asleep or G HUB open?)";
             return Task.CompletedTask;
         });
     }
+
+    private bool TakeControl() =>
+        LogitechHidpp.Transact(_hid, LogitechHidpp.SoftwareControl8071(_device, _feature)) is not null;
 
     public override void SetPower(bool on) { IsOn = on; Push(); RaiseChanged(); }
     public override void SetBrightness(int v) { Brightness = Math.Clamp(v, 1, 255); IsOn = true; Push(); RaiseChanged(); }
