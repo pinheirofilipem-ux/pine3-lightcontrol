@@ -40,7 +40,7 @@ internal sealed class TrayIcon : IDisposable
     private void Rebuild()
     {
         _menu.Items.Clear();
-        var lights = _hub.Lights;
+        var lights = _hub.SceneLights;   // rato e teclado ficam na janela (PC RGB)
         int on = lights.Count(l => l.IsAvailable && l.IsOn && (l.Features & LightFeatures.Action) == 0);
         _icon.Text = on == 0 ? "Pine3 Light Control" : $"Pine3 Light Control — {on} on";
 

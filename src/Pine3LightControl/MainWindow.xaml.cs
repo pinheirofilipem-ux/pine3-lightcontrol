@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     // Lights
     private readonly ObservableCollection<LightVm> _haCards = new();
     private readonly ObservableCollection<LightVm> _pcCards = new();
+    private readonly ObservableCollection<LightVm> _periphCards = new();
     private readonly ObservableCollection<OpenRgbDeviceVm> _orgbDevices = new();
     private readonly HashSet<string> _dirty = new();
     private bool _syncQueued;
@@ -52,6 +53,7 @@ public partial class MainWindow : Window
 
         HaLightsList.ItemsSource = _haCards;
         PcLightsList.ItemsSource = _pcCards;
+        PeripheralsList.ItemsSource = _periphCards;
         OrgbDevices.ItemsSource = _orgbDevices;
         ScenesList.ItemsSource = _scenes;
         QuickScenes.ItemsSource = _scenes;
@@ -149,7 +151,11 @@ public partial class MainWindow : Window
     private void RebuildLights()
     {
         Sync(_haCards, _hub.HaLights.Cast<ILight>().ToList());
-        Sync(_pcCards, _hub.PcLights.Concat(_hub.OpenRgbLights).ToList());
+        Sync(_pcCards, _hub.PcLights.Where(l => !LightHub.IsPeripheral(l)).Concat(_hub.OpenRgbLights).ToList());
+        Sync(_periphCards, _hub.Peripherals.ToList());
+        PeripheralsEmpty.Visibility = _periphCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RamSaveButton.IsEnabled = _hub.PcLights.OfType<Core.PcRgb.CorsairRamLight>().Any();
+        UpdatePcStatus();
         PcHeader.Visibility = _pcCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         HaHeader.Visibility = _haCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         LightsEmpty.Visibility = _haCards.Count + _pcCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -188,7 +194,7 @@ public partial class MainWindow : Window
                 _dirty.Clear();
                 _syncQueued = false;
             }
-            foreach (var c in _haCards.Concat(_pcCards))
+            foreach (var c in _haCards.Concat(_pcCards).Concat(_periphCards))
                 if (ids.Contains(c.Light.Id)) c.Sync();
         });
     }
@@ -287,6 +293,34 @@ public partial class MainWindow : Window
         UpdatePcStatus();
     }
 
+    private async void RamSave_Click(object sender, RoutedEventArgs e)
+    {
+        if (_hub.PcLights.OfType<Core.PcRgb.CorsairRamLight>().FirstOrDefault() is not { } ram)
+        {
+            RamSaveStatus.Text = "Memory not detected.";
+            return;
+        }
+        if (MessageBox.Show(this,
+                $"Save the current memory color ({(ram.IsOn ? ram.Color.Hex : "off")}) into the {ram.Modules.Count} module(s)?\n\n" +
+                "This writes the lighting stored in the modules, the same way iCUE's hardware lighting does. " +
+                "It's what they show from power-on until Pine3 Light Control starts.",
+                "Pine3 Light Control", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        RamSaveButton.IsEnabled = false;
+        RamSaveStatus.Text = "Saving…";
+        try
+        {
+            int ok = await ram.SaveToDeviceAsync();
+            RamSaveStatus.Text = ok == ram.Modules.Count
+                ? $"Saved in {ok} module(s)."
+                : $"Saved in {ok} of {ram.Modules.Count} module(s) — try again.";
+        }
+        catch (Exception ex)
+        {
+            RamSaveStatus.Text = "Error: " + ex.Message;
+        }
+        finally { RamSaveButton.IsEnabled = true; }
+    }
+
     // ══ Scenes ════════════════════════════════════════════════════════════
 
     private void RebuildScenes()
@@ -308,7 +342,7 @@ public partial class MainWindow : Window
     {
         var was = _newSceneLights.ToDictionary(c => c.Id, c => c.Include);
         _newSceneLights.Clear();
-        foreach (var l in _hub.Lights)
+        foreach (var l in _hub.SceneLights)
         {
             bool isAction = (l.Features & LightFeatures.Action) != 0;
             _newSceneLights.Add(new SceneLightChoice(l.Id, l.Name, isAction ? "Activate" : DescribeNow(l))

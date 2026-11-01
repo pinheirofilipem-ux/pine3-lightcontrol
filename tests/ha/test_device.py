@@ -160,3 +160,47 @@ class DeviceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_marks_unavailable_and_reconnects_when_seen_again(self):
+        """PC desligado: o controlador some; ao voltar a anunciar, liga e fica disponível."""
+        self.mod.RECONNECT_MIN_INTERVAL = 0
+
+        async def go():
+            calls = []
+            self.dev.add_listener(lambda: calls.append(self.dev.available))
+            await self.dev.update()
+            await self.dev.disconnect()
+            self.assertTrue(self.dev.available)
+            self.dev.mark_unavailable()
+            self.assertFalse(self.dev.available)
+            self.assertEqual(calls[-1], False)
+            self.assertTrue(self.dev.can_reconnect)
+            self.assertTrue(await self.dev.reconnect())
+            self.assertTrue(self.dev.available)
+            self.assertEqual(calls[-1], True)
+            self.assertFalse(await self.dev.reconnect())          # já disponível: nada a fazer
+            await self.dev.disconnect()
+        self.run_async(go())
+
+    def test_not_marked_unavailable_while_connected(self):
+        async def go():
+            await self.dev.update()                               # ligação ativa: não anuncia
+            self.dev.mark_unavailable()
+            self.assertTrue(self.dev.available)
+            await self.dev.disconnect()
+        self.run_async(go())
+
+    def test_reconnect_is_rate_limited_and_survives_failures(self):
+        self.mod.RECONNECT_MIN_INTERVAL = 60
+
+        async def boom(*_a, **_k):
+            raise bleak.exc.BleakError("not found")
+
+        async def go():
+            self.mod.establish_connection = boom
+            dev = self.mod.Sp110eDevice(None, "SP110E", "65:56:04:0a:1e:b5")
+            self.assertEqual(dev.address, "65:56:04:0A:1E:B5")
+            self.assertFalse(await dev.reconnect())               # ainda não visto: falha sem rebentar
+            self.assertFalse(dev.can_reconnect)                   # e espera antes de tentar outra vez
+            self.assertFalse(dev.available)
+        self.run_async(go())

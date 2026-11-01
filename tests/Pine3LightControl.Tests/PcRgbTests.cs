@@ -230,4 +230,24 @@ public class PcRgbTests
         await ram.WhenSent();
         Assert.Equal(new byte[] { 0, 0, 0 }, bus.Modules[0x58].Blocks.Last().Data[1..4]);
     }
+
+    [Fact]
+    public async Task Ram_save_to_device_writes_static_effect_to_every_module()
+    {
+        var bus = new FakeSmbus();
+        bus.Modules[0x58] = FakeSmbus.Vengeance();
+        bus.Modules[0x59] = FakeSmbus.Vengeance();
+        var modules = CorsairDram.Detect(bus, null, _ => { });
+        using var ram = new CorsairRamLight(bus, modules);
+        ram.SetColor(new RgbColor(0, 0, 255));
+        await ram.WhenSent();
+        Assert.Empty(bus.Modules[0x58].AppliedConfigs);                  // mudar a cor não grava nada
+
+        Assert.Equal(2, await ram.SaveToDeviceAsync());
+        foreach (var m in bus.Modules.Values)
+        {
+            Assert.Equal(new byte[] { CorsairDram.IdEffectConfiguration, CorsairDram.IdColorData }, m.AppliedConfigs);
+            Assert.Equal(new byte[] { 0, 0, 255, 0xFF }, m.Buffer.Take(4));     // cores: R,G,B,FF por LED
+        }
+    }
 }

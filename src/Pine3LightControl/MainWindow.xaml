@@ -324,8 +324,37 @@
                             <CheckBox x:Name="PcKeyboard" Content="Ducky OK-M 75 keyboard (VIA)" />
                             <TextBlock x:Name="PcKeyboardStatus" Style="{StaticResource Muted}" Margin="28,2,0,10" />
                             <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" FontSize="12"
-                                       Text="Close G HUB and VIA while using these. Changes are not saved in the devices: they come back to their own lighting after a power cycle." />
+                                       Text="Close G HUB and VIA while using these. The keyboard only works over the USB cable; plug it in at any time and it's picked up automatically. The last setting of each device is restored when the app starts." />
                             <Button Content="Save and detect" HorizontalAlignment="Left" Click="PcDetect_Click" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Mouse and keyboard" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                       Text="Set up here: they are not part of the scenes or of All on / All off. Whatever you set is remembered and sent again when they are detected." />
+                            <TextBlock x:Name="PeripheralsEmpty" Style="{StaticResource Muted}" Margin="0,0,0,4"
+                                       Text="None detected. Turn them on above and connect the keyboard with the USB cable." />
+                            <ItemsControl x:Name="PeripheralsList" ItemTemplate="{StaticResource LightCard}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Keep the color before the app starts" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                       Text="Colors are normally sent live and are lost when the PC turns off, so until Pine3 Light Control starts the memory shows the lighting stored in its modules. Save the current memory color into the modules to see it from power-on." />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" FontSize="12"
+                                       Text="This writes to the modules (like iCUE's hardware lighting): do it once when you've picked the color you want, not every time. Memory brightness is saved as part of the color." />
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="RamSaveButton" Content="Save memory color to the modules" Click="RamSave_Click" />
+                                <TextBlock x:Name="RamSaveStatus" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

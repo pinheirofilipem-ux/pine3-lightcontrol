@@ -32,6 +32,10 @@ Manual install: copy `custom_components/sp110e` into your Home Assistant
   when it needs to and disconnects after 60 s without commands, so the LED Hue app
   keeps working in between.
 - State is read when it starts, after each command, and every 10 minutes.
+- If the controller loses power (for example it's powered from the PC's USB and the
+  PC is off), the light shows as unavailable. As soon as the controller advertises
+  again the integration reconnects by itself and the light comes back, with no
+  reload needed. This also works if Home Assistant starts while it's off.
 - Range matters. If the light becomes unavailable or slow, put an ESP32 running
   ESPHome with `bluetooth_proxy:` (active connections enabled) near the controller.
   The integration uses it automatically.

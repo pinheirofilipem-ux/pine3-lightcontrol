@@ -222,6 +222,35 @@ public sealed class CorsairRamLight : LightBase, IDisposable
     public override void SetBrightness(int v) { Brightness = Math.Clamp(v, 1, 255); IsOn = true; Push(); RaiseChanged(); }
     public override void SetColor(RgbColor c) { Color = c; IsOn = true; Push(); RaiseChanged(); }
 
+    /// <summary>
+    /// Grava a cor atual nos módulos como efeito estático (configuração de efeito + cores,
+    /// como o modo Static do OpenRGB). É o que os módulos mostram ao arrancar, antes da app.
+    /// Escreve na memória do módulo: só a pedido do utilizador, nunca automaticamente.
+    /// Devolve quantos módulos aceitaram (o módulo só aplica se o CRC bater certo).
+    /// </summary>
+    public async Task<int> SaveToDeviceAsync()
+    {
+        await _queue.WhenIdle().ConfigureAwait(false);
+        var c = IsOn
+            ? new RgbColor((byte)(Color.R * Brightness / 255), (byte)(Color.G * Brightness / 255), (byte)(Color.B * Brightness / 255))
+            : new RgbColor(0, 0, 0);
+        int ok = 0;
+        var tcs = new TaskCompletionSource();
+        _queue.Post("save", () =>
+        {
+            try
+            {
+                foreach (var m in _modules)
+                    if (CorsairDram.SetStaticEffect(_bus, m, c, 255)) ok++;
+                Log.Write($"[RAM] cor {c.Hex} gravada em {ok}/{_modules.Count} módulo(s)");
+            }
+            finally { tcs.TrySetResult(); }
+            return Task.CompletedTask;
+        });
+        await tcs.Task.ConfigureAwait(false);
+        return ok;
+    }
+
     public Task WhenSent() => _queue.WhenIdle();
     public void Dispose() => _bus.Dispose();
 }

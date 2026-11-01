@@ -38,6 +38,7 @@ sealed class FakeLight : LightBase
     public override void SetColorTemp(int k) { ColorTempKelvin = k; Calls.Add($"temp:{k}"); }
     public override void SetEffect(int i) { Effect = i; Calls.Add($"effect:{_effects[i]}"); }
     public override void Activate() => Calls.Add("activate");
+    public void RaiseChangedForTest() => RaiseChanged();
 }
 
 public class SceneTests
@@ -128,6 +129,54 @@ public class SceneTests
         Assert.Equal(new[] { "power:True", "bri:10", "temp:3000" }, bulb.Calls);   // temperatura tem prioridade
         Assert.Empty(gone.Calls);
         Assert.Equal(new[] { "activate" }, movie.Calls);
+    }
+
+    [Fact]
+    public void Peripherals_stay_out_of_scenes_and_keep_their_last_state()
+    {
+        AppPaths.DataDir = Path.Combine(Path.GetTempPath(), "p3lc-test-" + Guid.NewGuid());
+        var cfg = new AppConfig();
+        // Cena antiga (≤ 0.5) com o teclado: sai ao abrir
+        cfg.Scenes.Add(new Scene
+        {
+            Name = "Old",
+            Lights =
+            {
+                new SceneLightState { LightId = "pc:keyboard-keys", On = true },
+                new SceneLightState { LightId = "pc:gpu", On = true },
+            },
+        });
+        var hub = new LightHub(cfg);
+        Assert.Equal(new[] { "pc:gpu" }, hub.Scenes[0].Lights.Select(l => l.LightId));
+
+        var gpu = new FakeLight("pc:gpu", Rgb, "Static") { Src = LightSource.Pc };
+        var kb = new FakeLight("pc:keyboard-keys", Rgb, "All Off", "Solid Color") { Src = LightSource.Pc };
+        var mouse = new FakeLight("pc:mouse", Rgb, "Static") { Src = LightSource.Pc };
+        hub.SetPcLights(new ILight[] { gpu, kb, mouse });
+
+        Assert.Equal(new[] { "pc:keyboard-keys", "pc:mouse" }, hub.Peripherals.Select(l => l.Id));
+        Assert.Equal(new[] { "pc:gpu" }, hub.SceneLights.Select(l => l.Id));
+        var sc = hub.CreateScene("New", new[] { "pc:gpu", "pc:keyboard-keys", "pc:mouse" });
+        Assert.Equal(new[] { "pc:gpu" }, sc.Lights.Select(l => l.LightId));
+        hub.SetAllPower(false);
+        Assert.Empty(kb.Calls);                                   // "desligar tudo" não mexe no teclado
+
+        // O teclado muda: o estado fica guardado
+        kb.Set(true, 180, new RgbColor(0, 255, 0), effect: 1);
+        kb.RaiseChangedForTest();
+        hub.FlushPcState();
+        var saved = AppConfig.Load().PcRgb.LastState["pc:keyboard-keys"];
+        Assert.Equal("#00FF00", saved.Color);
+        Assert.Equal("Solid Color", saved.Effect);
+
+        // Teclado desligado e ligado outra vez ao cabo: o novo recebe o estado guardado,
+        // a gráfica (que já existia) não é tocada
+        gpu.Calls.Clear();
+        var kb2 = new FakeLight("pc:keyboard-keys", Rgb, "All Off", "Solid Color") { Src = LightSource.Pc };
+        hub.SetPcLights(new ILight[] { gpu, mouse });
+        hub.SetPcLights(new ILight[] { gpu, mouse, kb2 });
+        Assert.Equal(new[] { "power:True", "bri:180", "color:#00FF00", "effect:Solid Color" }, kb2.Calls);
+        Assert.Empty(gpu.Calls);
     }
 
     [Fact]

@@ -18,6 +18,11 @@ public sealed class LightHub : IAsyncDisposable
     public LightHub(AppConfig config)
     {
         Config = config;
+        // O rato e o teclado deixaram de entrar nas cenas (0.6.0): tira-os das já gravadas
+        bool stripped = false;
+        foreach (var sc in config.Scenes)
+            stripped |= sc.Lights.RemoveAll(l => IsPeripheralId(l.LightId)) > 0;
+        if (stripped) config.Save();
         Ha.EntityUpdated += e =>
         {
             HaLight? l;
@@ -55,14 +60,47 @@ public sealed class LightHub : IAsyncDisposable
         get { lock (_gate) return _pc.ToArray(); }
     }
 
-    /// <summary>A app deteta o hardware e entrega aqui as luzes encontradas.</summary>
+    /// <summary>Periféricos (rato, teclado): configuram-se à parte e não entram nas cenas.</summary>
+    public static bool IsPeripheralId(string id) =>
+        id.StartsWith("pc:mouse", StringComparison.Ordinal) || id.StartsWith("pc:keyboard", StringComparison.Ordinal);
+
+    public static bool IsPeripheral(ILight l) => IsPeripheralId(l.Id);
+
+    /// <summary>Luzes que podem entrar nas cenas e nos "ligar/desligar tudo" (sem periféricos).</summary>
+    public IReadOnlyList<ILight> SceneLights => Lights.Where(l => !IsPeripheral(l)).ToArray();
+
+    /// <summary>O rato e o teclado detetados.</summary>
+    public IReadOnlyList<ILight> Peripherals
+    {
+        get { lock (_gate) return _pc.Where(IsPeripheral).ToArray(); }
+    }
+
+    private readonly HashSet<ILight> _known = new();
+    private Timer? _saveTimer;
+
+    /// <summary>
+    /// A app deteta o hardware e entrega aqui as luzes encontradas. As novas recebem o
+    /// último estado guardado (as que já existiam, ex.: a gráfica numa nova deteção só
+    /// do teclado, ficam como estão); daí em diante cada alteração é guardada.
+    /// </summary>
     public void SetPcLights(IEnumerable<ILight> lights)
     {
         var list = lights.ToList();
         foreach (var l in list)
         {
+            lock (_gate)
+                if (!_known.Add(l)) continue;
+            if (Config.PcRgb.LastState.TryGetValue(l.Id, out var st))
+            {
+                try { SceneEngine.Apply(new Scene { Lights = { st } }, _ => l); }
+                catch (Exception e) { Log.Write($"[PC RGB] repor {l.Id}: {e.Message}"); }
+            }
             var captured = l;
-            l.Changed += () => LightChanged?.Invoke(captured);
+            l.Changed += () =>
+            {
+                RememberPcState(captured);
+                LightChanged?.Invoke(captured);
+            };
         }
         List<ILight> old;
         lock (_gate)
@@ -70,6 +108,7 @@ public sealed class LightHub : IAsyncDisposable
             old = _pc.ToList();
             _pc.Clear();
             _pc.AddRange(list);
+            foreach (var o in old.Except(list)) _known.Remove(o);
         }
         foreach (var o in old.Except(list)) (o as IDisposable)?.Dispose();
         ListChanged?.Invoke();
@@ -86,6 +125,33 @@ public sealed class LightHub : IAsyncDisposable
     }
 
     public ILight? FindLight(string id) => Lights.FirstOrDefault(l => l.Id == id);
+
+    /// <summary>Guarda o estado de uma luz do PC (gravação agrupada, 2 s depois da última alteração).</summary>
+    private void RememberPcState(ILight l)
+    {
+        lock (_gate)
+        {
+            if (!_pc.Contains(l)) return;   // luz antiga a ser descartada
+            // Cópia nova em vez de alterar a atual: uma gravação noutra thread pode estar a lê-la
+            Config.PcRgb.LastState = new Dictionary<string, SceneLightState>(Config.PcRgb.LastState)
+            {
+                [l.Id] = SceneEngine.CaptureLight(l),
+            };
+            _saveTimer ??= new Timer(_ => Config.Save());
+            _saveTimer.Change(TimeSpan.FromSeconds(2), Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    /// <summary>Grava já o que estiver pendente (testes e saída da app).</summary>
+    public void FlushPcState()
+    {
+        lock (_gate)
+        {
+            if (_saveTimer is null) return;
+            _saveTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        }
+        Config.Save();
+    }
 
     public async Task StartAsync()
     {
@@ -219,7 +285,7 @@ public sealed class LightHub : IAsyncDisposable
     /// <summary>Cria uma cena com o estado atual das luzes indicadas.</summary>
     public Scene CreateScene(string name, IEnumerable<string> lightIds)
     {
-        var scene = SceneEngine.Capture(name, lightIds.Select(FindLight).OfType<ILight>());
+        var scene = SceneEngine.Capture(name, lightIds.Where(id => !IsPeripheralId(id)).Select(FindLight).OfType<ILight>());
         Config.Scenes.Add(scene);
         Config.Save();
         Log.Write($"[Cenas] criada \"{scene.Name}\" ({scene.Lights.Count} luzes)");
@@ -230,7 +296,8 @@ public sealed class LightHub : IAsyncDisposable
     /// <summary>Volta a gravar a cena com o estado atual das mesmas luzes.</summary>
     public void UpdateScene(Scene scene)
     {
-        var fresh = SceneEngine.Capture(scene.Name, scene.Lights.Select(s => FindLight(s.LightId)).OfType<ILight>());
+        var fresh = SceneEngine.Capture(scene.Name, scene.Lights.Where(s => !IsPeripheralId(s.LightId))
+            .Select(s => FindLight(s.LightId)).OfType<ILight>());
         // Luzes que agora não existem (entidade desmarcada / HA offline) mantêm o estado antigo
         foreach (var old in scene.Lights)
             if (fresh.Lights.All(f => f.LightId != old.LightId)) fresh.Lights.Add(old);
@@ -277,7 +344,7 @@ public sealed class LightHub : IAsyncDisposable
 
     public void SetAllPower(bool on)
     {
-        foreach (var l in Lights)
+        foreach (var l in SceneLights)
             if (l.IsAvailable && (l.Features & LightFeatures.OnOff) != 0) l.SetPower(on);
     }
 
@@ -285,6 +352,8 @@ public sealed class LightHub : IAsyncDisposable
     {
         await Ha.DisposeAsync().ConfigureAwait(false);
         await OpenRgb.DisposeAsync().ConfigureAwait(false);
+        FlushPcState();
+        _saveTimer?.Dispose();
         foreach (var l in PcLights) (l as IDisposable)?.Dispose();
     }
 }

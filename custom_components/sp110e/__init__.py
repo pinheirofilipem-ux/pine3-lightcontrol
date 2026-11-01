@@ -9,7 +9,6 @@ from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_ADDRESS, CONF_NAME, Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import REFRESH_INTERVAL_SECONDS
@@ -23,40 +22,55 @@ type Sp110eConfigEntry = ConfigEntry[Sp110eDevice]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: Sp110eConfigEntry) -> bool:
-    address: str = entry.data[CONF_ADDRESS]
-    ble_device = bluetooth.async_ble_device_from_address(hass, address.upper(), connectable=True)
-    if ble_device is None:
-        raise ConfigEntryNotReady(
-            f"SP110E {address} not found: is it powered and in range of a Bluetooth adapter or proxy?"
-        )
+    address: str = entry.data[CONF_ADDRESS].upper()
+    ble_device = bluetooth.async_ble_device_from_address(hass, address, connectable=True)
+    device = Sp110eDevice(ble_device, entry.data.get(CONF_NAME) or entry.title, address)
 
-    device = Sp110eDevice(ble_device, entry.data.get(CONF_NAME) or entry.title)
+    # Primeira leitura do estado; se não estiver ligado, as entidades ficam indisponíveis
+    # até o controlador voltar a anunciar
+    online = False
+    if ble_device is not None:
+        try:
+            await device.update()
+            online = True
+        except Exception as err:  # noqa: BLE001
+            await device.disconnect()
+            _LOGGER.info("%s: sem ligação no arranque (%s); a aguardar que volte a anunciar", device.name, err)
+    else:
+        _LOGGER.info("%s: não está à vista (desligado?); a aguardar que volte a anunciar", device.name)
+    if online and device.status is None:
+        _LOGGER.warning("%s: ligado, mas o controlador não enviou o estado; a usar valores por omissão", device.name)
+    device.ensure_status()
+    device.available = online
 
+    # O SP110E costuma ser alimentado pelo USB do PC: desliga com ele e volta a anunciar
+    # quando o PC liga. Em vez de deixar a entrada falhar (e o HA espaçar as tentativas),
+    # fica "indisponível" e volta a ligar logo que aparece um anúncio.
     @callback
     def _seen(service_info: bluetooth.BluetoothServiceInfoBleak, _change: bluetooth.BluetoothChange) -> None:
         # Anúncio recebido: atualiza o BLEDevice (pode ter mudado de adaptador/proxy)
         device.set_ble_device(service_info.device)
+        if device.can_reconnect:
+            entry.async_create_background_task(hass, device.reconnect(), f"sp110e reconnect {address}")
+
+    @callback
+    def _gone(_service_info: bluetooth.BluetoothServiceInfoBleak) -> None:
+        device.mark_unavailable()
 
     entry.async_on_unload(
         bluetooth.async_register_callback(
             hass,
             _seen,
-            bluetooth.BluetoothCallbackMatcher(address=address.upper(), connectable=True),
+            bluetooth.BluetoothCallbackMatcher(address=address, connectable=True),
             bluetooth.BluetoothScanningMode.PASSIVE,
         )
     )
-
-    # Primeira leitura do estado; se a ligação falhar, o HA volta a tentar mais tarde
-    try:
-        await device.update()
-    except Exception as err:  # noqa: BLE001
-        await device.disconnect()
-        raise ConfigEntryNotReady(f"Could not connect to {address}: {err}") from err
-    if device.status is None:
-        _LOGGER.warning("%s: ligado, mas o controlador não enviou o estado; a usar valores por omissão", device.name)
-        device.ensure_status()
+    entry.async_on_unload(bluetooth.async_track_unavailable(hass, _gone, address, connectable=True))
 
     async def _refresh(_now: object) -> None:
+        if not device.available:
+            await device.reconnect()
+            return
         try:
             await device.update()
         except Exception as err:  # noqa: BLE001

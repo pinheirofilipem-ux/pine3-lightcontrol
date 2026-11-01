@@ -84,6 +84,7 @@ public partial class App : Application
         Tray = new TrayIcon(Hub, ShowMain, Quit);
         await Hub.StartAsync();
         _ = PcRgb.PcRgbService.DetectAsync(Hub);
+        PcRgb.PcRgbService.WatchKeyboard(Hub);
 
         // Arranque manual abre sempre a janela; com o Windows (--minimized) fica na tray.
         if (!minimized || !config.StartMinimized) ShowMain();

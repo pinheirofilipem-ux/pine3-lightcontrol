@@ -38,6 +38,12 @@ public sealed class PcRgbConfig
     public bool Mouse { get; set; } = true;
     /// <summary>Teclado Ducky OK-M 75 (VIA).</summary>
     public bool Keyboard { get; set; } = true;
+    /// <summary>
+    /// Último estado de cada luz do PC (id → estado), reposto quando a luz é detetada
+    /// (arranque da app, teclado ligado ao cabo...). O rato e o teclado não entram nas
+    /// cenas: configuram-se só aqui.
+    /// </summary>
+    public Dictionary<string, Scenes.SceneLightState> LastState { get; set; } = new();
 }
 
 /// <summary>Ligação ao servidor SDK do OpenRGB (gráfica, memórias, periféricos...).</summary>

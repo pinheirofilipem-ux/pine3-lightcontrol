@@ -12,6 +12,7 @@ import asyncio
 import dataclasses
 from collections.abc import Callable
 import logging
+import time
 
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakCharacteristicNotFoundError, BleakError
@@ -29,14 +30,22 @@ _LOGGER = logging.getLogger(__name__)
 # Comandos seguidos sem esperar resposta podem perder-se; pequena pausa entre eles.
 WRITE_GAP = 0.03
 STATUS_TIMEOUT = 5.0
+# Ao voltar a ser visto (ex.: o PC que o alimenta voltou a ligar), tenta ligar no máximo
+# uma vez neste intervalo: os anúncios chegam várias vezes por segundo.
+RECONNECT_MIN_INTERVAL = 15.0
 
 
 class Sp110eDevice:
     """Estado e comandos de um controlador."""
 
-    def __init__(self, ble_device: BLEDevice, name: str) -> None:
+    def __init__(self, ble_device: BLEDevice | None, name: str, address: str | None = None) -> None:
+        # Sem BLEDevice: o controlador está configurado mas ainda não foi visto (ex.: o HA
+        # arrancou com ele desligado); liga-se quando aparecer o primeiro anúncio.
         self._ble_device = ble_device
+        self._address = (address or ble_device.address).upper()  # type: ignore[union-attr]
         self.name = name
+        self._reconnecting = False
+        self._last_reconnect = 0.0
         self._client: BleakClientWithServiceCache | None = None
         self._lock = asyncio.Lock()
         self._idle_handle: asyncio.TimerHandle | None = None
@@ -49,7 +58,11 @@ class Sp110eDevice:
 
     @property
     def address(self) -> str:
-        return self._ble_device.address
+        return self._address
+
+    @property
+    def is_connected(self) -> bool:
+        return self._client is not None and self._client.is_connected
 
     def set_ble_device(self, ble_device: BLEDevice) -> None:
         """Novo BLEDevice (outro adaptador/proxy pode estar mais perto)."""
@@ -63,6 +76,44 @@ class Sp110eDevice:
                 self._listeners.remove(cb)
 
         return remove
+
+    def mark_unavailable(self) -> None:
+        """O HA deixou de ver anúncios (ex.: o PC que o alimenta desligou). Enquanto há
+        ligação ativa o controlador não anuncia, por isso nesse caso não se mexe."""
+        if self.is_connected or not self.available:
+            return
+        _LOGGER.debug("%s: deixou de ser visto", self.name)
+        self.available = False
+        self._client = None
+        self._notify_listeners()
+
+    @property
+    def can_reconnect(self) -> bool:
+        return (
+            not self.available
+            and not self._reconnecting
+            and time.monotonic() - self._last_reconnect >= RECONNECT_MIN_INTERVAL
+        )
+
+    async def reconnect(self) -> bool:
+        """Voltou a ser visto: liga, lê o estado e fica disponível outra vez.
+        Ignora chamadas repetidas (uma tentativa de cada vez, no máximo a cada 15 s)."""
+        if not self.can_reconnect:
+            return False
+        self._reconnecting = True
+        self._last_reconnect = time.monotonic()
+        try:
+            await self.update()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("%s: ainda não foi possível voltar a ligar: %s", self.name, err)
+            return False
+        finally:
+            self._reconnecting = False
+        self.ensure_status()
+        self.available = True
+        _LOGGER.info("%s: disponível outra vez", self.name)
+        self._notify_listeners()
+        return True
 
     def _notify_listeners(self) -> None:
         for cb in list(self._listeners):
@@ -97,6 +148,8 @@ class Sp110eDevice:
     async def _ensure_connected(self) -> BleakClientWithServiceCache:
         if self._client is not None and self._client.is_connected:
             return self._client
+        if self._ble_device is None:
+            raise BleakError(f"{self._address} has not been seen yet")
         _LOGGER.debug("%s: a ligar a %s", self.name, self._ble_device.address)
         client = await establish_connection(
             BleakClientWithServiceCache,

@@ -26,7 +26,13 @@ HA, com a integração em `custom_components/sp110e`.
   0xFF60, relatórios de 64 bytes + report ID; só com fio: o recetor 2.4 GHz 056D:C077 não passa o VIA), canal 3 = teclas, 2 = lateral; nunca envia 0x09 (gravar na EEPROM).
 - A app corre como administrador (requireAdministrator) e arranca por tarefa agendada; o
   instalador é para todo o sistema. PawnIOLib.dll + SmbusI801.bin vêm de `tools/get-pawnio.ps1`.
-- Cenas: `Core/Scenes` (`SceneEngine.Capture/Apply`), guardadas em `AppConfig.Scenes`.
+- Cenas: `Core/Scenes` (`SceneEngine.Capture/Apply`), guardadas em `AppConfig.Scenes`. O rato e o
+  teclado (`LightHub.IsPeripheral`) não entram nas cenas nem no "All on/off": configuram-se na
+  página PC RGB. O último estado de cada luz do PC fica em `PcRgb.LastState` e é reposto quando
+  a luz é detetada; o teclado é detetado sozinho quando se liga o cabo (`DeviceList.Changed`).
+- Gravação nos dispositivos: só a pedido (botão + confirmação). Memórias: efeito estático
+  (config. de efeito + cores, `SaveToDeviceAsync`). Gráfica (CMR6000): o OpenRGB não tem
+  comando de gravação; não inventar um.
 - Toda a luz implementa `ILight` (via `LightBase`); os comandos passam por uma `SendQueue`
   (o último valor de cada tipo ganha) para os sliders não inundarem o HA.
 - Novos comandos/estado: acrescentar testes em `tests/` e correr `dotnet test`.
@@ -34,6 +40,9 @@ HA, com a integração em `custom_components/sp110e`.
 - Integração do Home Assistant em `custom_components/sp110e` (Python, HA ≥ 2025.2):
   protocolo em `protocol.py` (sem dependências), ligação em `device.py` (bleak-retry-connector,
   liga a pedido e desliga ao fim de 60 s). Versão no `manifest.json`. Testes em `tests/ha`.
+  Sem energia (PC desligado) fica indisponível (`async_track_unavailable`) e volta a ligar
+  sozinho ao primeiro anúncio (`Sp110eDevice.reconnect`, no máximo a cada 15 s); a entrada
+  carrega mesmo com o controlador desligado (não usa `ConfigEntryNotReady`).
 - O Bluetooth direto foi retirado da app (0.2.0): neste PC o Windows não lê os serviços GATT do
   SP110E (dois adaptadores, app e Chrome); o HA (Linux) e o iPhone leem `FFE0/FFE1` sem problemas.
 

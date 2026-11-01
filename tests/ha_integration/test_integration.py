@@ -232,3 +232,54 @@ async def test_setup_without_state_still_creates_light(hass: HomeAssistant) -> N
             assert await hass.config_entries.async_unload(entry.entry_id)
     finally:
         FakeClient.silent = False
+
+
+async def test_comes_back_when_seen_again(hass: HomeAssistant) -> None:
+    """PC (que alimenta o SP110E) desligado no arranque do HA: fica indisponível e volta
+    sozinho quando o controlador anuncia outra vez; volta a sair quando deixa de ser visto."""
+    from homeassistant.components.bluetooth import BluetoothChange
+    from homeassistant.const import STATE_UNAVAILABLE
+
+    FakeClient.instances.clear()
+    seen: list = []
+    gone: list = []
+
+    def _register(_hass, cb, _matcher, _mode):
+        seen.append(cb)
+        return lambda: None
+
+    def _track(_hass, cb, _address, connectable=True):
+        gone.append(cb)
+        return lambda: None
+
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=ADDRESS, title="SP110E 1E:B5",
+                            data={CONF_ADDRESS: ADDRESS, "name": "SP110E"})
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.sp110e.bluetooth.async_ble_device_from_address", return_value=None),
+        patch("custom_components.sp110e.bluetooth.async_register_callback", _register),
+        patch("custom_components.sp110e.bluetooth.async_track_unavailable", _track),
+        patch("custom_components.sp110e.device.establish_connection", _fake_establish),
+        patch("custom_components.sp110e.device.WRITE_GAP", 0),
+        patch("custom_components.sp110e.device.RECONNECT_MIN_INTERVAL", 0),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert hass.states.get("light.sp110e_1e_b5").state == STATE_UNAVAILABLE
+        assert not FakeClient.instances
+
+        seen[0](INFO, BluetoothChange.ADVERTISEMENT)          # o PC ligou: voltou a anunciar
+        await hass.async_block_till_done()
+        state = hass.states.get("light.sp110e_1e_b5")
+        assert state.state == STATE_ON
+        assert tuple(state.attributes["rgb_color"]) == (255, 0, 0)
+
+        await entry.runtime_data.disconnect()                   # inativo: volta a anunciar
+        gone[0](INFO)                                            # o PC desligou
+        await hass.async_block_till_done()
+        assert hass.states.get("light.sp110e_1e_b5").state == STATE_UNAVAILABLE
+
+        seen[0](INFO, BluetoothChange.ADVERTISEMENT)
+        await hass.async_block_till_done()
+        assert hass.states.get("light.sp110e_1e_b5").state == STATE_ON
+        assert await hass.config_entries.async_unload(entry.entry_id)
