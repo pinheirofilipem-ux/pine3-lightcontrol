@@ -19,7 +19,8 @@ sealed class FakeLight : LightBase
 
     public override string Id { get; }
     public override string Name => Id;
-    public override LightSource Source => LightSource.HomeAssistant;
+    public LightSource Src = LightSource.HomeAssistant;
+    public override LightSource Source => Src;
     public override LightFeatures Features => _features;
     public bool Available = true;
     public override bool IsAvailable => Available;
@@ -78,6 +79,24 @@ public class SceneTests
         var e = SceneEngine.CaptureLight(strip);
         Assert.Equal("Effect 7", e.Effect);
         Assert.Null(e.Color);
+    }
+
+    [Fact]
+    public void Pc_lights_keep_effect_and_color_together()
+    {
+        // Teclado VIA: "Solid Color" é um efeito com cor; tem de voltar com a cor certa
+        var kb = new FakeLight("pc:keyboard-keys", Rgb, "All Off", "Solid Color", "Breathing") { Src = LightSource.Pc };
+        kb.Set(true, 200, new RgbColor(0, 0, 255), effect: 1);
+        var st = SceneEngine.CaptureLight(kb);
+        Assert.Equal("Solid Color", st.Effect);
+        Assert.Equal("#0000FF", st.Color);
+
+        kb.Set(true, 200, new RgbColor(255, 0, 0), effect: 2);
+        kb.Calls.Clear();
+        SceneEngine.Apply(new Scene { Lights = { st } }, _ => kb);
+        Assert.Equal(new[] { "power:True", "bri:200", "color:#0000FF", "effect:Solid Color" }, kb.Calls);
+        Assert.Equal(1, kb.Effect);
+        Assert.Equal(new RgbColor(0, 0, 255), kb.Color);
     }
 
     [Fact]

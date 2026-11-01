@@ -53,11 +53,14 @@ public static class SceneEngine
         if (Has(LightFeatures.Brightness)) s.Brightness = l.Brightness;
 
         var effect = Has(LightFeatures.Effects) && l.Effect >= 0 && l.Effect < l.Effects.Count ? l.Effects[l.Effect] : null;
-        if (effect is not null && !IsStaticEffect(effect)) s.Effect = effect;
+        // RGB do PC (teclado VIA, rato): o efeito e a cor são independentes (o "Solid Color"
+        // e o "Breathing" usam a cor escolhida), por isso guardam-se os dois, mesmo o estático.
+        bool pc = l.Source == LightSource.Pc;
+        if (effect is not null && (pc || !IsStaticEffect(effect))) s.Effect = effect;
 
         if (Has(LightFeatures.ColorTemp) && (l.ColorMode == ActiveColorMode.ColorTemp || !Has(LightFeatures.Color)))
             s.ColorTempKelvin = l.ColorTempKelvin;
-        else if (Has(LightFeatures.Color) && s.Effect is null)
+        else if (Has(LightFeatures.Color) && (pc || s.Effect is null))
             s.Color = l.Color.Hex;
         return s;
     }
