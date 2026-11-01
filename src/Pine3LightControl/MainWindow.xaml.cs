@@ -155,6 +155,7 @@ public partial class MainWindow : Window
         Sync(_periphCards, _hub.Peripherals.ToList());
         PeripheralsEmpty.Visibility = _periphCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         RamSaveButton.IsEnabled = _hub.PcLights.OfType<Core.PcRgb.CorsairRamLight>().Any();
+        GpuSaveButton.IsEnabled = _hub.PcLights.OfType<Core.PcRgb.RadeonLedLight>().Any();
         UpdatePcStatus();
         PcHeader.Visibility = _pcCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         HaHeader.Visibility = _haCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -291,6 +292,29 @@ public partial class MainWindow : Window
         PcGpuStatus.Text = PcMemoryStatus.Text = PcMouseStatus.Text = PcKeyboardStatus.Text = "Detecting…";
         await PcRgb.PcRgbService.DetectAsync(_hub);
         UpdatePcStatus();
+    }
+
+    private async void GpuSave_Click(object sender, RoutedEventArgs e)
+    {
+        if (_hub.PcLights.OfType<Core.PcRgb.RadeonLedLight>().FirstOrDefault() is not { } gpu)
+        {
+            GpuSaveStatus.Text = "Graphics card not detected.";
+            return;
+        }
+        if (MessageBox.Show(this,
+                $"Save the current graphics card lighting ({(gpu.IsOn ? $"{gpu.Effects[Math.Max(gpu.Effect, 0)]}, {gpu.Color.Hex}" : "off")}) into the card?\n\n" +
+                "This uses AMD's own driver function to store it in the logo's controller, the same way AMD's RGB tool does. " +
+                "It's what the card shows from power-on until Pine3 Light Control starts.",
+                "Pine3 Light Control", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        GpuSaveButton.IsEnabled = false;
+        GpuSaveStatus.Text = "Saving…";
+        try
+        {
+            await gpu.WhenSent();   // a cor atual já foi enviada pelo HID
+            var (_, msg) = await System.Threading.Tasks.Task.Run(PcRgb.AdlRadeonLed.FlashSave);
+            GpuSaveStatus.Text = msg;
+        }
+        finally { GpuSaveButton.IsEnabled = true; }
     }
 
     private async void RamSave_Click(object sender, RoutedEventArgs e)

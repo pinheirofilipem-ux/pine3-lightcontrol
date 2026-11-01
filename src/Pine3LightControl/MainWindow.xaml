@@ -348,11 +348,15 @@
                         <StackPanel>
                             <TextBlock Text="Keep the color before the app starts" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
-                                       Text="Colors are normally sent live and are lost when the PC turns off, so until Pine3 Light Control starts the memory shows the lighting stored in its modules. Save the current memory color into the modules to see it from power-on." />
+                                       Text="Colors are normally sent live and are lost when the PC turns off, so until Pine3 Light Control starts the graphics card and the memory show the lighting stored in them. Save the current color into them to see it from power-on." />
                             <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" FontSize="12"
-                                       Text="This writes to the modules (like iCUE's hardware lighting): do it once when you've picked the color you want, not every time. Memory brightness is saved as part of the color." />
+                                       Text="This writes to the devices' own memory (like iCUE's hardware lighting and AMD's RGB tool): do it once when you've picked the color you want, not every time." />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Button x:Name="GpuSaveButton" Content="Save graphics card color" Click="GpuSave_Click" MinWidth="240" />
+                                <TextBlock x:Name="GpuSaveStatus" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                            </StackPanel>
                             <StackPanel Orientation="Horizontal">
-                                <Button x:Name="RamSaveButton" Content="Save memory color to the modules" Click="RamSave_Click" />
+                                <Button x:Name="RamSaveButton" Content="Save memory color to the modules" Click="RamSave_Click" MinWidth="240" />
                                 <TextBlock x:Name="RamSaveStatus" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="12,0,0,0" />
                             </StackPanel>
                         </StackPanel>

@@ -31,8 +31,9 @@ HA, com a integração em `custom_components/sp110e`.
   página PC RGB. O último estado de cada luz do PC fica em `PcRgb.LastState` e é reposto quando
   a luz é detetada; o teclado é detetado sozinho quando se liga o cabo (`DeviceList.Changed`).
 - Gravação nos dispositivos: só a pedido (botão + confirmação). Memórias: efeito estático
-  (config. de efeito + cores, `SaveToDeviceAsync`). Gráfica (CMR6000): o OpenRGB não tem
-  comando de gravação; não inventar um.
+  (config. de efeito + cores, `SaveToDeviceAsync`). Gráfica: a cor vai pelo HID e a
+  gravação é a função oficial da AMD `ADL2_Adapter_Radeon_Usb_Led_Flash_Save` (atiadlxx.dll do
+  driver, `PcRgb/AdlRadeonLed.cs`, radeonusbled.h do ADL SDK). Não inventar comandos HID de gravação.
 - Toda a luz implementa `ILight` (via `LightBase`); os comandos passam por uma `SendQueue`
   (o último valor de cada tipo ganha) para os sliders não inundarem o HA.
 - Novos comandos/estado: acrescentar testes em `tests/` e correr `dotnet test`.
