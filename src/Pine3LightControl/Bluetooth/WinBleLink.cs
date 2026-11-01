@@ -10,6 +10,7 @@ using Pine3LightControl.Core.Bluetooth;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
+using Windows.Devices.Enumeration;
 using Windows.Devices.Radios;
 using Windows.Foundation;
 using Windows.Foundation.Metadata;
@@ -35,6 +36,9 @@ internal sealed class WinBleLink : IBleLink
     private object? _connParams;               // pedido de parâmetros de ligação (Windows 11)
     private CancellationTokenSource? _phaseCts; // cancela a descoberta se a ligação cair
     private DateTime _openedAt;
+    private int _attempt;
+    private static bool _adapterLogged;
+    private GattCharacteristic? _ffe2;
 
     public WinBleLink(BleDeviceConfig cfg, Action saveConfig)
     {
@@ -87,6 +91,12 @@ internal sealed class WinBleLink : IBleLink
             return false;
         }
 
+        if (!_adapterLogged)
+        {
+            _adapterLogged = true;
+            Log.Write($"[BLE] adaptador: {await BleAdapter.DescribeAdapterAsync().ConfigureAwait(false)}");
+        }
+
         // 1) O controlador está a anunciar? Se não, quase sempre está ligado ao telemóvel.
         Step("looking for the controller");
         var seen = await FindAdvertAsync(ct).ConfigureAwait(false);
@@ -103,10 +113,14 @@ internal sealed class WinBleLink : IBleLink
             _saveConfig();
         }
 
-        // 2) Ligar com o tipo de endereço anunciado
+        // 2) Ligar com o tipo de endereço anunciado. Alterna entre duas estratégias:
+        //    A) pelo endereço, pedindo só o serviço FFE0;
+        //    B) como o projeto C# SiKaminski/BluetoothLE-LED-Strip: DeviceWatcher +
+        //       FromIdAsync, todos os serviços, e handshake FFE2 <- 01 00, FFE1 <- 01 B7 E3 D5.
+        bool viaWatcher = _attempt++ % 2 == 0;
         try
         {
-            if (await TryConnectAsync(type, ct).ConfigureAwait(false))
+            if (await TryConnectAsync(type, viaWatcher, ct).ConfigureAwait(false))
             {
                 Step("connected");
                 return true;
@@ -121,7 +135,7 @@ internal sealed class WinBleLink : IBleLink
         {
             LastError = e.Message.Split('\n')[0].Trim();
         }
-        Log.Write($"[BLE] {Label}: falhou: {LastError}");
+        Log.Write($"[BLE] {Label}: falhou ({(viaWatcher ? "B" : "A")}): {LastError}");
         await CleanupAsync().ConfigureAwait(false);
         return false;
     }
@@ -171,12 +185,29 @@ internal sealed class WinBleLink : IBleLink
         finally { session.SessionStatusChanged -= h; }
     }
 
-    private async Task<bool> TryConnectAsync(BluetoothAddressType type, CancellationToken ct)
+    private async Task<bool> TryConnectAsync(BluetoothAddressType type, bool viaWatcher, CancellationToken ct)
     {
         var kind = type == BluetoothAddressType.Random ? "random" : "public";
-        Step($"opening device ({kind} address)");
-        var dev = await Timed(BluetoothLEDevice.FromBluetoothAddressAsync(_address, type), "opening the device", ct)
-            .ConfigureAwait(false);
+        BluetoothLEDevice? dev;
+        if (viaWatcher)
+        {
+            Step("finding the device in Windows (B)");
+            var id = await FindDeviceIdAsync(ct).ConfigureAwait(false);
+            if (id is null)
+            {
+                LastError = "device not listed by Windows";
+                return false;
+            }
+            Log.Write($"[BLE] {Label}: id {id}");
+            Step("opening device (B)");
+            dev = await Timed(BluetoothLEDevice.FromIdAsync(id), "opening the device", ct).ConfigureAwait(false);
+        }
+        else
+        {
+            Step($"opening device ({kind} address, A)");
+            dev = await Timed(BluetoothLEDevice.FromBluetoothAddressAsync(_address, type), "opening the device", ct)
+                .ConfigureAwait(false);
+        }
         if (dev is null)
         {
             LastError = "device not found";
@@ -187,6 +218,8 @@ internal sealed class WinBleLink : IBleLink
         dev.ConnectionStatusChanged += OnConnectionStatusChanged;
 
         // Pede ao Windows para manter a ligação aberta (senão fecha-a ao fim de uns segundos sem tráfego).
+        // Na estratégia B só se faz depois da descoberta (como no projeto C# que a inspira).
+        if (!viaWatcher)
         try
         {
             _session = await Timed(GattSession.FromDeviceIdAsync(dev.BluetoothDeviceId), "opening the GATT session", ct)
@@ -196,7 +229,7 @@ internal sealed class WinBleLink : IBleLink
         }
         catch (Exception e) when (e is not OperationCanceledException) { Log.Write($"[BLE] {Label}: GattSession: {e.Message}"); }
 
-        if (_session is not null)
+        if (_session is not null && !viaWatcher)
         {
             Step("waiting for the controller to accept the connection");
             if (!await WaitActiveAsync(_session, StepTimeout, ct).ConfigureAwait(false))
@@ -206,36 +239,96 @@ internal sealed class WinBleLink : IBleLink
             }
             Log.Write($"[BLE] {Label}: sessão GATT ativa (MTU {_session.MaxPduSize})");
         }
-        RequestFastConnection(dev);
+        if (!viaWatcher) RequestFastConnection(dev);
 
-        Step("reading services");
-        var sr = await DiscoverAsync(m => dev.GetGattServicesForUuidAsync(Sp110e.ServiceUuid, m),
-            r => r.Status == GattCommunicationStatus.Success && r.Services.Count > 0, r => $"{r.Status}, {r.Services.Count}",
-            "reading services", ct).ConfigureAwait(false);
-        if (sr.Status != GattCommunicationStatus.Success)
+        if (viaWatcher)
         {
-            LastError = Describe(sr.Status);
-            return false;
+            // B) todos os serviços / características, modo por omissão do Windows
+            Step("reading all services (B)");
+            var t0 = DateTime.UtcNow;
+            var all = await Timed(dev.GetGattServicesAsync(), "reading services", ct).ConfigureAwait(false);
+            Log.Write($"[BLE] {Label}: serviços (B): {all.Status}, {all.Services.Count} em {(DateTime.UtcNow - t0).TotalSeconds:0.0} s: " +
+                      string.Join(", ", all.Services.Select(x => x.Uuid.ToString("D")[4..8])));
+            if (all.Status != GattCommunicationStatus.Success)
+            {
+                LastError = Describe(all.Status);
+                return false;
+            }
+            _service = all.Services.FirstOrDefault(x => x.Uuid == Sp110e.ServiceUuid);
+            foreach (var other in all.Services.Where(x => !ReferenceEquals(x, _service))) other.Dispose();
+            if (_service is null)
+            {
+                LastError = "no FFE0 service: not an SP110E-type controller";
+                return false;
+            }
+            Step("reading characteristics (B)");
+            var chars = await Timed(_service.GetCharacteristicsAsync(), "reading characteristics", ct).ConfigureAwait(false);
+            if (chars.Status != GattCommunicationStatus.Success)
+            {
+                LastError = Describe(chars.Status);
+                return false;
+            }
+            _ch = chars.Characteristics.FirstOrDefault(c => c.Uuid == Sp110e.CharacteristicUuid);
+            _ffe2 = chars.Characteristics.FirstOrDefault(c => c.Uuid == Ffe2Uuid);
+            if (_ch is null)
+            {
+                LastError = "no FFE1 characteristic";
+                return false;
+            }
         }
-        if (sr.Services.Count == 0)
+        else
         {
-            LastError = "no FFE0 service: not an SP110E-type controller";
-            return false;
-        }
-        _service = sr.Services[0];
-        foreach (var extra in sr.Services.Skip(1)) extra.Dispose();
+            Step("reading services (A)");
+            var sr = await DiscoverAsync(m => dev.GetGattServicesForUuidAsync(Sp110e.ServiceUuid, m),
+                r => r.Status == GattCommunicationStatus.Success && r.Services.Count > 0, r => $"{r.Status}, {r.Services.Count}",
+                "reading services", ct).ConfigureAwait(false);
+            if (sr.Status != GattCommunicationStatus.Success)
+            {
+                LastError = Describe(sr.Status);
+                return false;
+            }
+            if (sr.Services.Count == 0)
+            {
+                LastError = "no FFE0 service: not an SP110E-type controller";
+                return false;
+            }
+            _service = sr.Services[0];
+            foreach (var extra in sr.Services.Skip(1)) extra.Dispose();
 
-        Step("reading characteristics");
-        var service = _service;
-        var cr = await DiscoverAsync(m => service.GetCharacteristicsForUuidAsync(Sp110e.CharacteristicUuid, m),
-            r => r.Status == GattCommunicationStatus.Success && r.Characteristics.Count > 0, r => $"{r.Status}, {r.Characteristics.Count}",
-            "reading characteristics", ct).ConfigureAwait(false);
-        if (cr.Status != GattCommunicationStatus.Success || cr.Characteristics.Count == 0)
-        {
-            LastError = cr.Status == GattCommunicationStatus.Success ? "no FFE1 characteristic" : Describe(cr.Status);
-            return false;
+            Step("reading characteristics");
+            var service = _service;
+            var cr = await DiscoverAsync(m => service.GetCharacteristicsForUuidAsync(Sp110e.CharacteristicUuid, m),
+                r => r.Status == GattCommunicationStatus.Success && r.Characteristics.Count > 0, r => $"{r.Status}, {r.Characteristics.Count}",
+                "reading characteristics", ct).ConfigureAwait(false);
+            if (cr.Status != GattCommunicationStatus.Success || cr.Characteristics.Count == 0)
+            {
+                LastError = cr.Status == GattCommunicationStatus.Success ? "no FFE1 characteristic" : Describe(cr.Status);
+                return false;
+            }
+            _ch = cr.Characteristics[0];
+            var service2 = _service;
+            try
+            {
+                var c2 = await Timed(service2.GetCharacteristicsForUuidAsync(Ffe2Uuid, BluetoothCacheMode.Cached), "reading FFE2", ct)
+                    .ConfigureAwait(false);
+                _ffe2 = c2.Characteristics.FirstOrDefault();
+            }
+            catch (Exception e) when (e is not OperationCanceledException) { Log.Write($"[BLE] {Label}: FFE2: {e.Message}"); }
         }
-        _ch = cr.Characteristics[0];
+
+        await HandshakeAsync().ConfigureAwait(false);
+
+        if (viaWatcher && _session is null)
+        {
+            try
+            {
+                _session = await Timed(GattSession.FromDeviceIdAsync(dev.BluetoothDeviceId), "opening the GATT session", ct)
+                    .ConfigureAwait(false);
+                _session.MaintainConnection = true;
+                _session.SessionStatusChanged += OnSessionStatusChanged;
+            }
+            catch (Exception e) when (e is not OperationCanceledException) { Log.Write($"[BLE] {Label}: GattSession: {e.Message}"); }
+        }
         var props = _ch.CharacteristicProperties;
         _writeOption = props.HasFlag(GattCharacteristicProperties.WriteWithoutResponse)
             ? GattWriteOption.WriteWithoutResponse
@@ -259,6 +352,67 @@ internal sealed class WinBleLink : IBleLink
         _connected = true;
         Log.Write($"[BLE] {Label}: pronto em {(DateTime.UtcNow - _openedAt).TotalSeconds:0.0} s");
         return true;
+    }
+
+    private static readonly Guid Ffe2Uuid = new("0000ffe2-0000-1000-8000-00805f9b34fb");
+
+    /// <summary>
+    /// Handshake visto em SiKaminski/BluetoothLE-LED-Strip e no gist do RufusVS:
+    /// FFE2 &lt;- 01 00 e FFE1 &lt;- 01 B7 E3 D5 logo após ligar (alguns firmwares
+    /// cortam a ligação sem isto). Falhas aqui não impedem a ligação.
+    /// </summary>
+    private async Task HandshakeAsync()
+    {
+        try
+        {
+            if (_ffe2 is not null)
+            {
+                var r = await _ffe2.WriteValueWithResultAsync(CryptographicBuffer.CreateFromByteArray(new byte[] { 0x01, 0x00 }))
+                    .AsTask().ConfigureAwait(false);
+                Log.Write($"[BLE] {Label}: handshake FFE2: {r.Status}");
+            }
+            if (_ch is not null)
+            {
+                var opt = _ch.CharacteristicProperties.HasFlag(GattCharacteristicProperties.WriteWithoutResponse)
+                    ? GattWriteOption.WriteWithoutResponse : GattWriteOption.WriteWithResponse;
+                var r = await _ch.WriteValueWithResultAsync(
+                    CryptographicBuffer.CreateFromByteArray(new byte[] { 0x01, 0xB7, 0xE3, 0xD5 }), opt).AsTask().ConfigureAwait(false);
+                Log.Write($"[BLE] {Label}: handshake FFE1: {r.Status}");
+            }
+        }
+        catch (Exception e) { Log.Write($"[BLE] {Label}: handshake: {e.Message}"); }
+    }
+
+    /// <summary>Encontra o dispositivo como o Windows o lista (AssociationEndpoint), pelo endereço.</summary>
+    private async Task<string?> FindDeviceIdAsync(CancellationToken ct)
+    {
+        var found = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var aqs = $"({BluetoothLEDevice.GetDeviceSelectorFromPairingState(false)}) OR ({BluetoothLEDevice.GetDeviceSelectorFromPairingState(true)})";
+        var w = DeviceInformation.CreateWatcher(aqs,
+            new[] { "System.Devices.Aep.DeviceAddress", "System.Devices.Aep.IsConnected" },
+            DeviceInformationKind.AssociationEndpoint);
+        w.Added += (_, d) =>
+        {
+            if (d.Properties.TryGetValue("System.Devices.Aep.DeviceAddress", out var a) &&
+                string.Equals(a as string, _cfg.Address, StringComparison.OrdinalIgnoreCase))
+                found.TrySetResult(d.Id);
+        };
+        w.Updated += (_, _) => { };   // sem estes handlers o DeviceWatcher não entrega eventos
+        w.Removed += (_, _) => { };
+        try
+        {
+            w.Start();
+            return await found.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        }
+        catch (TimeoutException) { return null; }
+        finally
+        {
+            try
+            {
+                if (w.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted) w.Stop();
+            }
+            catch { }
+        }
     }
 
     /// <summary>
@@ -362,6 +516,7 @@ internal sealed class WinBleLink : IBleLink
     {
         _connected = false;
         try { if (_ch is not null) _ch.ValueChanged -= OnValueChanged; } catch { }
+        _ffe2 = null;
         try { if (_dev is not null) _dev.ConnectionStatusChanged -= OnConnectionStatusChanged; } catch { }
         try { if (_session is not null) _session.SessionStatusChanged -= OnSessionStatusChanged; } catch { }
         try { (_connParams as IDisposable)?.Dispose(); } catch { }
@@ -401,6 +556,19 @@ internal static class BleAdapter
             var radio = await a.GetRadioAsync();
             if (radio is not null && radio.State != RadioState.On) return "Bluetooth is turned off";
             return null;
+        }
+        catch (Exception e) { return e.Message; }
+    }
+
+    /// <summary>Nome e endereço do adaptador Bluetooth que o Windows está a usar.</summary>
+    public static async Task<string> DescribeAdapterAsync()
+    {
+        try
+        {
+            var a = await BluetoothAdapter.GetDefaultAsync();
+            if (a is null) return "none";
+            var di = await DeviceInformation.CreateFromIdAsync(a.DeviceId);
+            return $"{di.Name} [{BleAddress.Format(a.BluetoothAddress)}] LE={a.IsLowEnergySupported} central={a.IsCentralRoleSupported}";
         }
         catch (Exception e) { return e.Message; }
     }
