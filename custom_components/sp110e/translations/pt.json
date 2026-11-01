@@ -1,0 +1,24 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "description": "Escolhe o controlador SP110E a adicionar.",
+        "data": { "address": "Dispositivo" }
+      },
+      "bluetooth_confirm": {
+        "description": "Configurar {name}? Fecha primeiro a app LED Hue no telemóvel: o controlador só aceita uma ligação de cada vez."
+      }
+    },
+    "abort": {
+      "already_configured": "Este controlador já está configurado.",
+      "no_devices_found": "Nenhum SP110E encontrado. Confirma que está ligado e ao alcance de um adaptador Bluetooth ou de um proxy Bluetooth do ESPHome."
+    }
+  },
+  "entity": {
+    "number": {
+      "speed": { "name": "Velocidade do efeito" },
+      "white": { "name": "Canal branco" }
+    }
+  }
+}

@@ -21,6 +21,14 @@ made by magnificent3
   or off, and runs scenes and scripts. Closing the window keeps the app in the tray.
 - **Startup:** optional "Start with Windows" (per user, no admin needed).
 
+## Home Assistant integration (SP110E)
+
+Some PCs can't read the GATT table of these controllers: the connection is made, but
+service discovery never answers, on any adapter and in Chrome too, while a phone reads it in a fraction of a second. For those PCs there is a Home Assistant integration in
+[`custom_components/sp110e`](custom_components/sp110e/README.md), installable from
+HACS. Once installed, the strip is a normal Home Assistant light that this app
+controls from its Home Assistant page.
+
 ## Build
 
 1. Run `build.bat`. It installs the .NET 10 SDK through winget if needed, runs the
@@ -67,6 +75,8 @@ src/Pine3LightControl.Core   no Windows APIs: SP110E protocol, Home Assistant cl
                              light model, config (testable anywhere)
 src/Pine3LightControl        WPF app: tray, control panel, Bluetooth LE via WinRT
 tests/                       xUnit: protocol, send queue, fake BLE link, fake HA server
+tests/ha/                    Python tests of the Home Assistant integration
+custom_components/sp110e/    Home Assistant integration for SP110E (HACS)
 installer.iss                Inno Setup script
 build.bat                    tests + build + installer
 ```

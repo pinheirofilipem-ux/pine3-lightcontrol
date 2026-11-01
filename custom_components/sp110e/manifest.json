@@ -1,0 +1,17 @@
+{
+  "domain": "sp110e",
+  "name": "SP110E LED controller",
+  "bluetooth": [
+    { "local_name": "SP110E", "connectable": true },
+    { "local_name": "SP105E", "connectable": true }
+  ],
+  "codeowners": ["@pinheirofilipem-ux"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/pinheirofilipem-ux/pine3-lightcontrol/blob/claude/sharp-johnson-pi3l4x/custom_components/sp110e/README.md",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/pinheirofilipem-ux/pine3-lightcontrol/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

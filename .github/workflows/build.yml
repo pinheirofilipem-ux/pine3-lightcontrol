@@ -40,6 +40,15 @@ jobs:
       - name: Testes
         run: dotnet test tests\Pine3LightControl.Tests -c Release --nologo
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Testes da integração do Home Assistant
+        run: |
+          pip install bleak bleak-retry-connector
+          python -m unittest discover -s tests/ha -v
+
       - name: Publish
         run: dotnet publish src\Pine3LightControl\Pine3LightControl.csproj -c Release -o dist\app --nologo
 
