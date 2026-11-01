@@ -62,6 +62,10 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$v") { throw "Tag $env:GITHUB_REF_NAME != v$v (csproj)" }
           "version=$v" >> $env:GITHUB_OUTPUT
 
+      - name: PawnIO (memória RGB)
+        shell: pwsh
+        run: ./tools/get-pawnio.ps1
+
       - name: Testes
         run: dotnet test tests\Pine3LightControl.Tests -c Release --nologo
 
@@ -85,6 +89,7 @@ jobs:
           $null = $p.Handle
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "auto-teste não terminou em 2 min" }
           Get-Content "$env:TEMP\Pine3LightControl-selftest\pine3lightcontrol.log" -ErrorAction SilentlyContinue
+          if (-not (Test-Path dist\app\PawnIOLib.dll) -or -not (Test-Path dist\app\SmbusI801.bin)) { throw "PawnIO files missing from the build" }
           if ($p.ExitCode -ne 0) { throw "auto-teste falhou (código $($p.ExitCode))" }
 
       - name: Instalador (Inno Setup)

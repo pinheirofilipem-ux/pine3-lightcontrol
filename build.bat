@@ -28,6 +28,14 @@ if not defined HAVE10 (
 )
 echo  [OK] .NET 10 SDK found
 
+:: -- PawnIO (memory RGB) --------------------------------------------------------
+echo.
+echo  [..] PawnIO files for memory RGB...
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\get-pawnio.ps1"
+if errorlevel 1 (
+    echo  [WARN] Could not get the PawnIO files - memory RGB will be unavailable in this build.
+)
+
 :: -- Tests ---------------------------------------------------------------------
 echo.
 echo  [1/3] Running tests...

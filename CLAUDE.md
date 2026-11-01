@@ -8,10 +8,19 @@ HA, com a integração em `custom_components/sp110e`.
 ## Regras
 - Responder em PT-PT. Comentários do código em PT; texto da UI em inglês (como o pine3-monitor).
 - `Pine3LightControl.Core` (net10.0) **não** pode usar APIs do Windows: é o que os testes cobrem.
+- Hardware real (gráfica/RAM) só se testa no PC do utilizador: nunca alargar endereços SMBus,
+  PIDs aceites ou escritas persistentes sem confirmação dele.
 - OpenRGB: `Core/OpenRgb` fala o protocolo SDK v1 (TCP 6742; formato confirmado no código do
   OpenRGB release_1.1). Dispositivos com o mesmo nome formam uma luz (`OpenRgbLight`); brilho =
   cor escalada (modo Direct). Placa de referência 6950 XT = Cooler Master `2516:014D`, RAM
   Vengeance RGB Pro DDR4 por SMBus (precisa do OpenRGB como administrador + PawnIO).
+- RGB do PC sem software extra: `Core/PcRgb` (protocolos, testados com HID/SMBus falsos) e
+  `src/Pine3LightControl/PcRgb` (HidSharp, PawnIO). Gráfica: Cooler Master CMR6000 (2516:014D,
+  interface 1, relatórios de 65 bytes). Memória: Corsair DRAM 0x58–0x5F, só PIDs Vengeance RGB
+  Pro DDR4 com CRC certo, modo direto (volátil); firmware < 4 grava efeito estático (debounce).
+  Mutex global `Global\Access_SMBUS.HTP.Method` partilhado com o Pine3 Monitor/LHM.
+- A app corre como administrador (requireAdministrator) e arranca por tarefa agendada; o
+  instalador é para todo o sistema. PawnIOLib.dll + SmbusI801.bin vêm de `tools/get-pawnio.ps1`.
 - Cenas: `Core/Scenes` (`SceneEngine.Capture/Apply`), guardadas em `AppConfig.Scenes`.
 - Toda a luz implementa `ILight` (via `LightBase`); os comandos passam por uma `SendQueue`
   (o último valor de cada tipo ganha) para os sliders não inundarem o HA.

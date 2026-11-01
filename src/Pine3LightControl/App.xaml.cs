@@ -26,6 +26,22 @@ public partial class App : Application
         base.OnStartup(e);
         bool minimized = e.Args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
 
+        // ── Comandos do instalador: registam/removem o arranque e saem ──
+        bool reg = e.Args.Any(a => a.Equals("--register-startup", StringComparison.OrdinalIgnoreCase));
+        if (reg || e.Args.Any(a => a.Equals("--unregister-startup", StringComparison.OrdinalIgnoreCase)))
+        {
+            var (ok, msg) = reg ? StartupManager.Enable(Environment.ProcessPath ?? "") : StartupManager.Disable();
+            Log.Write($"[Setup] startup {(reg ? "on" : "off")}: {ok} {msg}");
+            if (reg && ok)
+            {
+                var c = AppConfig.Load();
+                c.StartWithWindows = true;
+                c.Save();
+            }
+            Shutdown(ok ? 0 : 1);
+            return;
+        }
+
         if (e.Args.Any(a => a.Equals("--self-test", StringComparison.OrdinalIgnoreCase)))
         {
             Shutdown(await SelfTestAsync());
@@ -67,6 +83,7 @@ public partial class App : Application
         Hub = new LightHub(config);
         Tray = new TrayIcon(Hub, ShowMain, Quit);
         await Hub.StartAsync();
+        _ = PcRgb.PcRgbService.DetectAsync(Hub);
 
         // Arranque manual abre sempre a janela; com o Windows (--minimized) fica na tray.
         if (!minimized || !config.StartMinimized) ShowMain();
@@ -92,6 +109,8 @@ public partial class App : Application
             // OpenRGB sem servidor: o cartão aparece como "offline" e a app não pode falhar por isso
             config.OpenRgb.Enabled = true;
             config.OpenRgb.Devices.Add("Test GPU");
+            config.PcRgb.Gpu = true;
+            config.PcRgb.Memory = true;
             config.Scenes.Add(new Core.Scenes.Scene
             {
                 Name = "Test scene",
@@ -104,6 +123,9 @@ public partial class App : Application
 
             Hub = new LightHub(config);
             await Hub.StartAsync();
+            // Deteção real do hardware (no CI não há nada: tem de falhar com elegância)
+            await PcRgb.PcRgbService.DetectAsync(Hub);
+            Log.Write($"[SelfTest] gráfica: {PcRgb.PcRgbService.GpuStatus}; memória: {PcRgb.PcRgbService.MemoryStatus}");
             Tray = new TrayIcon(Hub, () => { }, () => { });
             _main = new MainWindow(Hub);
             _main.Show();

@@ -13,6 +13,7 @@ public sealed class LightHub : IAsyncDisposable
     private readonly object _gate = new();
     private readonly List<HaLight> _ha = new();
     private readonly List<OpenRgbLight> _orgb = new();
+    private readonly List<ILight> _pc = new();
 
     public LightHub(AppConfig config)
     {
@@ -45,7 +46,33 @@ public sealed class LightHub : IAsyncDisposable
 
     public IReadOnlyList<ILight> Lights
     {
-        get { lock (_gate) return _ha.Cast<ILight>().Concat(_orgb).ToArray(); }
+        get { lock (_gate) return _pc.Concat(_orgb).Concat(_ha).ToArray(); }
+    }
+
+    /// <summary>Luzes do próprio PC controladas diretamente (gráfica, memórias).</summary>
+    public IReadOnlyList<ILight> PcLights
+    {
+        get { lock (_gate) return _pc.ToArray(); }
+    }
+
+    /// <summary>A app deteta o hardware e entrega aqui as luzes encontradas.</summary>
+    public void SetPcLights(IEnumerable<ILight> lights)
+    {
+        var list = lights.ToList();
+        foreach (var l in list)
+        {
+            var captured = l;
+            l.Changed += () => LightChanged?.Invoke(captured);
+        }
+        List<ILight> old;
+        lock (_gate)
+        {
+            old = _pc.ToList();
+            _pc.Clear();
+            _pc.AddRange(list);
+        }
+        foreach (var o in old.Except(list)) (o as IDisposable)?.Dispose();
+        ListChanged?.Invoke();
     }
 
     public IReadOnlyList<OpenRgbLight> OpenRgbLights
@@ -258,5 +285,6 @@ public sealed class LightHub : IAsyncDisposable
     {
         await Ha.DisposeAsync().ConfigureAwait(false);
         await OpenRgb.DisposeAsync().ConfigureAwait(false);
+        foreach (var l in PcLights) (l as IDisposable)?.Dispose();
     }
 }

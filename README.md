@@ -12,7 +12,10 @@ made by magnificent3
   with live state updates. You choose which entities to show: lights (brightness, color,
   color temperature, effects, depending on what each light supports), switches,
   input booleans, fans, scenes, scripts and buttons.
-- **PC RGB (OpenRGB):** graphics card, memory and any other device OpenRGB sees, through
+- **PC RGB, built in:** the Radeon RX 6000 reference logo (Cooler Master USB controller,
+  no admin needed) and Corsair Vengeance RGB Pro DDR4 memory (SMBus through the PawnIO
+  driver), using the protocols documented in OpenRGB's source, with no extra software running.
+- **PC RGB (OpenRGB, optional):** graphics card, memory and any other device OpenRGB sees, through
   its SDK server (TCP 6742): on/off, brightness and color. Devices with the same name
   (e.g. four memory modules) are controlled as one light.
 - **Scenes:** set the lights the way you want, tick the ones that belong to the scene and
@@ -20,7 +23,9 @@ made by magnificent3
   brightness, color or color temperature, effect, and Home Assistant scenes/scripts to run.
 - **Tray:** left-click opens the panel. Right-click activates scenes, toggles each light
   and turns everything on or off. Closing the window keeps the app in the tray.
-- **Startup:** optional "Start with Windows" (per user, no admin needed).
+- **Startup:** optional "Start with Windows". The app runs as administrator (the memory's
+  SMBus needs it), so it starts from a Task Scheduler task with highest privileges, without
+  a UAC prompt — like Pine3 Monitor.
 
 ## SP110E / LED Hue Bluetooth controllers
 
@@ -36,7 +41,10 @@ ordinary lights for this app.
 1. Run `build.bat`. It installs the .NET 10 SDK through winget if needed, runs the
    tests, publishes to `dist\app`, and, if Inno Setup 6 is installed, creates
    `dist\Pine3LightControl-Setup-<version>.exe`.
-2. Run the installer. It installs for the current user without asking for admin.
+2. Run the installer. It installs to Program Files, registers the startup task and can
+   install the PawnIO driver (winget). `build.bat` and CI download PawnIOLib.dll and the
+   signed SmbusI801.bin module (PawnIO, LGPL-2.1) as shipped in OpenRGB 1.1, checking their
+   SHA-256 (`tools/get-pawnio.ps1`).
 
 The code also compiles on Linux or macOS (`EnableWindowsTargeting`), and the tests run there:
 `dotnet test tests/Pine3LightControl.Tests`.
@@ -57,7 +65,10 @@ In the app, go to **Home Assistant**, fill in the address
 Tick the entities you want under "What to control". The token is stored encrypted for
 your Windows user (DPAPI).
 
-For the PC's own RGB, install [OpenRGB](https://openrgb.org) and run it as administrator
+For the PC's own RGB, open **PC RGB**: the Radeon logo is on by default; tick the memory
+(it asks for confirmation) and press **Save and detect**. Close OpenRGB, iCUE and the AMD
+RGB LED tool first. OpenRGB is only needed for other devices (e.g. the mouse):
+install [OpenRGB](https://openrgb.org) and run it as administrator
 (the memory needs it), start its SDK server (SDK Server → Start Server; in Settings turn on
 Start at login, Start minimized and Start server), and close iCUE and the AMD RGB tool.
 In the app, open **PC RGB**, tick **Use OpenRGB**, press **Save and connect** and tick the
@@ -69,16 +80,16 @@ Then create scenes on the **Scenes** page.
 
 | What | Where |
 |---|---|
-| Program | `%LOCALAPPDATA%\Programs\Pine3 Light Control` (per-user install) |
+| Program | `C:\Program Files\Pine3 Light Control` |
 | Settings and scenes | `%APPDATA%\Pine3LightControl\config.json` |
 | Log | `%APPDATA%\Pine3LightControl\pine3lightcontrol.log` |
 
 ## Project layout
 
 ```
-src/Pine3LightControl.Core   no Windows APIs: Home Assistant and OpenRGB clients,
-                             light model, scenes, config (testable anywhere)
-src/Pine3LightControl        WPF app: tray, control panel
+src/Pine3LightControl.Core   no Windows APIs: Home Assistant and OpenRGB clients, Radeon
+                             (CMR6000) and Corsair DRAM protocols, light model, scenes, config
+src/Pine3LightControl        WPF app: tray, control panel, HID (HidSharp), SMBus (PawnIO)
 tests/                       xUnit: send queue, scenes, fake HA and OpenRGB servers
 custom_components/sp110e/    Home Assistant integration for SP110E (HACS)
 tests/ha, tests/ha_integration   Python tests of the integration

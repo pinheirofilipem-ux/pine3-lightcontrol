@@ -11,7 +11,7 @@
     <RootNamespace>Pine3LightControl</RootNamespace>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Product>Pine3 Light Control</Product>
     <Company>magnificent3</Company>
     <Copyright>made by magnificent3</Copyright>
@@ -30,6 +30,16 @@
   <ItemGroup>
     <ProjectReference Include="..\Pine3LightControl.Core\Pine3LightControl.Core.csproj" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <PackageReference Include="HidSharp" Version="2.1.0" />
+  </ItemGroup>
+
+  <!-- PawnIO (LGPL-2.1): biblioteca + módulo SMBus assinado, descarregados pelo build.bat / CI
+       para third_party\pawnio (ver tools\get-pawnio.ps1). Sem eles a memória fica indisponível. -->
+  <ItemGroup>
+    <Content Include="..\..\third_party\pawnio\PawnIOLib.dll" Condition="Exists('..\..\third_party\pawnio\PawnIOLib.dll')"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="PawnIOLib.dll" />
+    <Content Include="..\..\third_party\pawnio\SmbusI801.bin" Condition="Exists('..\..\third_party\pawnio\SmbusI801.bin')"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="SmbusI801.bin" />
   </ItemGroup>
 
   <ItemGroup>

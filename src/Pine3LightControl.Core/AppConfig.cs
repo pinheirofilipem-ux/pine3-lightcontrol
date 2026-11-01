@@ -27,6 +27,15 @@ public sealed class HomeAssistantConfig
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrEmpty(TokenProtected);
 }
 
+/// <summary>RGB do PC controlado diretamente pela app (sem OpenRGB).</summary>
+public sealed class PcRgbConfig
+{
+    /// <summary>Logótipo Radeon (USB, não precisa de administrador).</summary>
+    public bool Gpu { get; set; } = true;
+    /// <summary>Memórias Corsair por SMBus (PawnIO + administrador). Desligado por omissão.</summary>
+    public bool Memory { get; set; }
+}
+
 /// <summary>Ligação ao servidor SDK do OpenRGB (gráfica, memórias, periféricos...).</summary>
 public sealed class OpenRgbConfig
 {
@@ -46,6 +55,7 @@ public sealed class AppConfig
     public bool TrayHintShown { get; set; }
     public HomeAssistantConfig HomeAssistant { get; set; } = new();
     public OpenRgbConfig OpenRgb { get; set; } = new();
+    public PcRgbConfig PcRgb { get; set; } = new();
     /// <summary>Cenas: estado guardado de várias luzes, ativado de uma vez.</summary>
     public List<Scenes.Scene> Scenes { get; set; } = new();
 

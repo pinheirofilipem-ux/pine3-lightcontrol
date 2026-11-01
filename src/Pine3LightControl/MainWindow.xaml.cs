@@ -131,6 +131,7 @@ public partial class MainWindow : Window
         if (tag == "HomeAssistant") { RefreshEntityStates(); _haTimer.Start(); }
         else _haTimer.Stop();
         if (tag == "Scenes") RebuildNewSceneLights();
+        if (tag == "Pc") UpdatePcStatus();
     }
 
     /// <summary>Tags das páginas, pela ordem do menu (usado pelo auto-teste).</summary>
@@ -148,7 +149,7 @@ public partial class MainWindow : Window
     private void RebuildLights()
     {
         Sync(_haCards, _hub.HaLights.Cast<ILight>().ToList());
-        Sync(_pcCards, _hub.OpenRgbLights.Cast<ILight>().ToList());
+        Sync(_pcCards, _hub.PcLights.Concat(_hub.OpenRgbLights).ToList());
         PcHeader.Visibility = _pcCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         HaHeader.Visibility = _haCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         LightsEmpty.Visibility = _haCards.Count + _pcCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -255,6 +256,32 @@ public partial class MainWindow : Window
     }
 
     private void OrgbDownload_Click(object sender, RoutedEventArgs e) => Shell.Open("https://openrgb.org");
+
+    private void UpdatePcStatus()
+    {
+        PcGpuStatus.Text = PcRgb.PcRgbService.GpuStatus;
+        PcMemoryStatus.Text = PcRgb.PcRgbService.MemoryStatus;
+    }
+
+    private async void PcDetect_Click(object sender, RoutedEventArgs e)
+    {
+        var c = _hub.Config.PcRgb;
+        if (PcMemory.IsChecked == true && !c.Memory &&
+            MessageBox.Show(this,
+                "Memory RGB is controlled over the SMBus, the same low-level bus the memory and other motherboard chips use. " +
+                "Pine3 Light Control uses OpenRGB's protocol and checks, but this is still direct hardware access.\n\nEnable it?",
+                "Pine3 Light Control", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+        {
+            PcMemory.IsChecked = false;
+            return;
+        }
+        c.Gpu = PcGpu.IsChecked == true;
+        c.Memory = PcMemory.IsChecked == true;
+        _hub.Config.Save();
+        PcGpuStatus.Text = PcMemoryStatus.Text = "Detecting…";
+        await PcRgb.PcRgbService.DetectAsync(_hub);
+        UpdatePcStatus();
+    }
 
     // ══ Scenes ════════════════════════════════════════════════════════════
 
@@ -486,6 +513,8 @@ public partial class MainWindow : Window
         OrgbHost.Text = c.OpenRgb.Host;
         OrgbPort.Text = c.OpenRgb.Port.ToString();
         OrgbEnabled.IsChecked = c.OpenRgb.Enabled;
+        PcGpu.IsChecked = c.PcRgb.Gpu;
+        PcMemory.IsChecked = c.PcRgb.Memory;
         HaInsecure.IsChecked = c.HomeAssistant.AllowInvalidCertificate;
         SetTokenHint();
         AppearanceCombo.SelectedItem = AppearanceCombo.Items.OfType<ComboBoxItem>()

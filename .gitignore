@@ -6,3 +6,4 @@ TestResults/
 .vs/
 __pycache__/
 *.pyc
+third_party/

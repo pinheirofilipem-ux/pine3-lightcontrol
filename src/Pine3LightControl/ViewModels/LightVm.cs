@@ -26,8 +26,8 @@ public sealed class LightVm : Observable
     public string Name => Light.Name;
     public string Status => Light.StatusText;
     public bool IsAvailable => Light.IsAvailable;
-    public string SourceText => Light.Source == LightSource.OpenRgb ? "OpenRGB" : "Home Assistant";
-    public string SourceGlyph => Light.Source == LightSource.OpenRgb ? "\uE7F8" : "\uE80F";
+    public string SourceText => Light.Source switch { LightSource.OpenRgb => "OpenRGB", LightSource.Pc => "PC", _ => "Home Assistant" };
+    public string SourceGlyph => Light.Source == LightSource.HomeAssistant ? "\uE80F" : "\uE7F8";
     public double CardOpacity => IsAvailable ? 1.0 : 0.6;
 
     // ── Capacidades ──

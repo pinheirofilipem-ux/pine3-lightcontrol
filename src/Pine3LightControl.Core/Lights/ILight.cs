@@ -1,6 +1,6 @@
 namespace Pine3LightControl.Core.Lights;
 
-public enum LightSource { HomeAssistant, OpenRgb }
+public enum LightSource { HomeAssistant, OpenRgb, Pc }
 
 /// <summary>Modo de cor em uso (para as cenas guardarem o que interessa).</summary>
 public enum ActiveColorMode { None, Rgb, ColorTemp }
