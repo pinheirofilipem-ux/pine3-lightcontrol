@@ -3,11 +3,11 @@ using Pine3LightControl.Core.Lights;
 namespace Pine3LightControl.Core.PcRgb;
 
 /// <summary>
-/// Ratos Logitech com HID++ 2.0 e a funcionalidade RGB 0x8070 (ex.: G903), pelo
-/// recetor LIGHTSPEED (046D:C539, interface 2, coleção dos relatórios longos de 20
-/// bytes, report ID 0x11). Protocolo do OpenRGB (LogitechProtocolCommon.cpp,
-/// release_1.1): procura a funcionalidade, lê zonas e efeitos e aplica com
-/// SET_EFFECT (0x30). Não grava nada no rato.
+/// Ratos Logitech com HID++ 2.0 e uma das funcionalidades RGB 0x8070 (RGB_EFFECTS1) ou
+/// 0x8071 (RGB_EFFECTS2, ex.: G903 HERO), pelo recetor LIGHTSPEED (046D:C539,
+/// interface 2, coleção dos relatórios longos de 20 bytes, report ID 0x11). Protocolo
+/// do OpenRGB (LogitechProtocolCommon.cpp): procura a funcionalidade, lê zonas e
+/// efeitos e aplica com SET_EFFECT (0x30 na 8070, 0x10 na 8071).
 /// </summary>
 public static class LogitechHidpp
 {
@@ -15,9 +15,13 @@ public static class LogitechHidpp
     public const ushort ReceiverPid = 0xC539;
     public const int LongLen = 20;
     public const byte LongReport = 0x11;
-    public const ushort FeatureRgbEffects = 0x8070;
+    public const ushort FeatureRgbEffects = 0x8070, FeatureRgbEffects2 = 0x8071, FeatureSet = 0x0001;
     public const byte CmdGetFeature = 0x01;     // root (índice 0), função 0
     public const byte CmdGetCount = 0x00, CmdGetInfo = 0x10, CmdGetControl = 0x20, CmdSetEffect = 0x30;
+    // 0x8071: INFO 0x00 (zonas e efeitos), SET_LED_EFFECT 0x10, CONTROL 0x50
+    public const byte Cmd2Info = 0x00, Cmd2SetEffect = 0x10, Cmd2Control = 0x50;
+    // IFeatureSet (0x0001): GET_COUNT (função 0) e GET_FEATURE_ID (função 1)
+    public const byte CmdFeatureCount = 0x01, CmdFeatureId = 0x11;
     public const ushort FxOff = 0x0000, FxOn = 0x0001, FxSpectrum = 0x0003, FxBreathing = 0x000A;
     public const int TimeoutMs = 500;
 
@@ -47,39 +51,114 @@ public static class LogitechHidpp
 
     public sealed record Zone(byte Index, ushort Location, Dictionary<ushort, byte> Effects);
 
-    /// <summary>Procura o rato (índice 1–6 no recetor) com a funcionalidade 0x8070.</summary>
-    public static (byte Device, byte Feature, List<Zone> Zones)? Detect(IHidLink hid)
+    /// <summary>Índice da funcionalidade <paramref name="page"/> no dispositivo (0 = não tem; null = sem resposta).</summary>
+    public static byte? FeatureIndex(IHidLink hid, byte dev, ushort page)
     {
+        var r = Transact(hid, Request(dev, 0x00, CmdGetFeature, (byte)(page >> 8), (byte)page));
+        return r?[4];
+    }
+
+    /// <summary>Lista das funcionalidades do dispositivo (para o log, quando não há RGB conhecido).</summary>
+    public static List<ushort> Features(IHidLink hid, byte dev)
+    {
+        var list = new List<ushort>();
+        if (FeatureIndex(hid, dev, FeatureSet) is not { } fs || fs == 0) return list;
+        var count = Transact(hid, Request(dev, fs, CmdFeatureCount));
+        if (count is null) return list;
+        for (byte i = 1; i <= count[4]; i++)
+        {
+            var r = Transact(hid, Request(dev, fs, CmdFeatureId, i));
+            if (r is null) break;
+            list.Add((ushort)((r[4] << 8) | r[5]));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Procura o rato (índice 1–6 no recetor) com a funcionalidade 0x8070 ou 0x8071.
+    /// <paramref name="note"/> explica a falha quando um dispositivo respondeu sem RGB conhecido.
+    /// </summary>
+    public static (byte Device, byte Feature, List<Zone> Zones, ushort Page)? Detect(IHidLink hid, out string? note)
+    {
+        note = null;
         for (byte dev = 1; dev <= 6; dev++)
         {
-            var r = Transact(hid, Request(dev, 0x00, CmdGetFeature, FeatureRgbEffects >> 8, FeatureRgbEffects & 0xFF));
-            if (r is null || r[4] == 0) continue;
-            byte feature = r[4];
-            var count = Transact(hid, Request(dev, feature, CmdGetCount));
-            if (count is null) continue;
-            var zones = new List<Zone>();
-            for (byte z = 0; z < count[4]; z++)
-            {
-                var info = Transact(hid, Request(dev, feature, CmdGetInfo, z));
-                if (info is null) continue;
-                var fx = new Dictionary<ushort, byte>();
-                for (byte f = 0; f < info[7]; f++)
-                {
-                    var ctl = Transact(hid, Request(dev, feature, CmdGetControl, z, f));
-                    if (ctl is null) continue;
-                    ushort type = (ushort)((ctl[6] << 8) | ctl[7]);
-                    fx.TryAdd(type, f);
-                }
-                zones.Add(new Zone(info[4], (ushort)((info[5] << 8) | info[6]), fx));
-            }
-            if (zones.Count > 0) return (dev, feature, zones);
+            var f1 = FeatureIndex(hid, dev, FeatureRgbEffects);
+            if (f1 is null) continue;                      // nada neste índice
+            if (f1 > 0 && ReadZones8070(hid, dev, f1.Value) is { Count: > 0 } z1)
+                return (dev, f1.Value, z1, FeatureRgbEffects);
+            var f2 = FeatureIndex(hid, dev, FeatureRgbEffects2);
+            if (f2 > 0 && ReadZones8071(hid, dev, f2.Value) is { Count: > 0 } z2)
+                return (dev, f2.Value, z2, FeatureRgbEffects2);
+            var pages = Features(hid, dev);
+            note = $"device {dev} answered without RGB (features: {string.Join(" ", pages.Select(p => p.ToString("X4")))})";
         }
         return null;
     }
 
-    /// <summary>Pacote SET_EFFECT como logitech_device::setMode (fp8070, sem persistência).</summary>
+    public static (byte Device, byte Feature, List<Zone> Zones, ushort Page)? Detect(IHidLink hid) => Detect(hid, out _);
+
+    private static List<Zone> ReadZones8070(IHidLink hid, byte dev, byte feature)
+    {
+        var zones = new List<Zone>();
+        var count = Transact(hid, Request(dev, feature, CmdGetCount));
+        if (count is null) return zones;
+        for (byte z = 0; z < count[4]; z++)
+        {
+            var info = Transact(hid, Request(dev, feature, CmdGetInfo, z));
+            if (info is null) continue;
+            var fx = new Dictionary<ushort, byte>();
+            for (byte f = 0; f < info[7]; f++)
+            {
+                var ctl = Transact(hid, Request(dev, feature, CmdGetControl, z, f));
+                if (ctl is null) continue;
+                fx.TryAdd((ushort)((ctl[6] << 8) | ctl[7]), f);
+            }
+            zones.Add(new Zone(info[4], (ushort)((info[5] << 8) | info[6]), fx));
+        }
+        return zones;
+    }
+
+    /// <summary>
+    /// 0x8071 (como logitech_device::getRGBconfig): INFO com FF FF dá o número de zonas
+    /// (data[1..2]); INFO (zona, FF) dá localização data[2..3] e nº de efeitos data[4];
+    /// INFO (zona, efeito) dá o tipo em data[2..3].
+    /// </summary>
+    private static List<Zone> ReadZones8071(IHidLink hid, byte dev, byte feature)
+    {
+        var zones = new List<Zone>();
+        var count = Transact(hid, Request(dev, feature, Cmd2Info, 0xFF, 0xFF));
+        if (count is null) return zones;
+        int n = (count[5] << 8) | count[6];
+        for (int z = 0; z < Math.Min(n, 16); z++)
+        {
+            var info = Transact(hid, Request(dev, feature, Cmd2Info, (byte)z, 0xFF));
+            if (info is null) continue;
+            var fx = new Dictionary<ushort, byte>();
+            for (byte f = 0; f < info[8]; f++)
+            {
+                var e = Transact(hid, Request(dev, feature, Cmd2Info, (byte)z, f));
+                if (e is null) continue;
+                fx.TryAdd((ushort)((e[6] << 8) | e[7]), f);
+            }
+            zones.Add(new Zone(info[4], (ushort)((info[6] << 8) | info[7]), fx));
+        }
+        return zones;
+    }
+
+    /// <summary>
+    /// 0x8071 CONTROL (01 03 05, como set8071Effects): tira o RGB e a gestão de energia
+    /// ao firmware para os efeitos enviados ficarem. Volta ao firmware quando o rato desliga.
+    /// </summary>
+    public static byte[] SoftwareControl8071(byte device, byte feature) =>
+        Request(device, feature, Cmd2Control, 0x01, 0x03, 0x05);
+
+    /// <summary>
+    /// Pacote SET_EFFECT como logitech_device::setMode. Na 8070 vai sem persistência
+    /// (data[12] = 0); na 8071 o OpenRGB usa data[12] = 1 e comando 0x10.
+    /// </summary>
     public static byte[] SetEffect(byte device, byte feature, byte zone, byte fxIndex, ushort fxType,
-        RgbColor c, ushort periodMs, byte brightness)
+        RgbColor c, ushort periodMs, byte brightness, ushort page = FeatureRgbEffects)
     {
         var d = new byte[16];
         d[0] = zone; d[1] = fxIndex; d[2] = c.R; d[3] = c.G; d[4] = c.B;
@@ -92,8 +171,9 @@ public static class LogitechHidpp
                 d[5] = (byte)(periodMs >> 8); d[6] = (byte)periodMs; d[8] = brightness;
                 break;
         }
-        d[12] = 0x00;
-        return Request(device, feature, CmdSetEffect, d);
+        bool v1 = page == FeatureRgbEffects;
+        d[12] = v1 ? (byte)0x00 : (byte)0x01;
+        return Request(device, feature, v1 ? CmdSetEffect : Cmd2SetEffect, d);
     }
 }
 
@@ -103,12 +183,16 @@ public sealed class LogitechMouseLight : LightBase, IDisposable
     private static readonly string[] EffectNames = { "Static", "Breathing", "Color cycle" };
     private readonly IHidLink _hid;
     private readonly byte _device, _feature;
+    private readonly ushort _page;
+    private bool _controlSent;
     private readonly IReadOnlyList<LogitechHidpp.Zone> _zones;
     private readonly SendQueue _queue = new(TimeSpan.FromMilliseconds(40));
     private string _status;
 
-    public LogitechMouseLight(IHidLink hid, byte device, byte feature, IReadOnlyList<LogitechHidpp.Zone> zones, string name = "Mouse")
+    public LogitechMouseLight(IHidLink hid, byte device, byte feature, IReadOnlyList<LogitechHidpp.Zone> zones,
+        string name = "Mouse", ushort page = LogitechHidpp.FeatureRgbEffects)
     {
+        _page = page;
         _hid = hid;
         _device = device;
         _feature = feature;
@@ -151,6 +235,8 @@ public sealed class LogitechMouseLight : LightBase, IDisposable
         _queue.Post("fx", () =>
         {
             int missing = 0;
+            if (_page == LogitechHidpp.FeatureRgbEffects2 && !_controlSent)
+                _controlSent = LogitechHidpp.Transact(_hid, LogitechHidpp.SoftwareControl8071(_device, _feature)) is not null;
             foreach (var z in _zones)
             {
                 if (!z.Effects.TryGetValue(type, out var fx))
@@ -158,7 +244,7 @@ public sealed class LogitechMouseLight : LightBase, IDisposable
                     missing++;
                     continue;
                 }
-                var r = LogitechHidpp.Transact(_hid, LogitechHidpp.SetEffect(_device, _feature, z.Index, fx, type, c, 3000, pct));
+                var r = LogitechHidpp.Transact(_hid, LogitechHidpp.SetEffect(_device, _feature, z.Index, fx, type, c, 3000, pct, _page));
                 if (r is null) missing++;
             }
             _status = missing == 0 ? $"{_zones.Count} zone(s)" : "Mouse did not answer (asleep or G HUB open?)";

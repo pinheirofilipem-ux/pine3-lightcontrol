@@ -4,7 +4,8 @@ namespace Pine3LightControl.Core.PcRgb;
 
 /// <summary>
 /// Iluminação de teclados VIA (protocolo 12, menus "custom"): relatórios raw HID de
-/// 32 bytes (+ report ID 0x00 = 33), interface de usage page 0xFF60.
+/// 32 bytes (+ report ID 0x00 = 33; o OK-M 75 usa 64 + 1, o link completa com zeros),
+/// interface de usage page 0xFF60.
 /// Comandos: 0x01 versão, 0x07 set value, 0x08 get value (canal, id, dados).
 /// Valores: 1 brilho, 2 efeito, 3 velocidade, 4 cor (hue, sat). Nada é gravado
 /// na EEPROM (sem 0x09): as alterações duram até o teclado reiniciar.
@@ -34,8 +35,9 @@ public static class Via
         {
             var r = hid.Read(ReadTimeoutMs);
             if (r is null) return null;
-            // Com report ID à frente (Windows) ou sem ele
-            var d = r.Length == ReportSize ? r.AsSpan(1).ToArray() : r;
+            // Com report ID à frente (Windows: 33 ou 65 bytes, conforme o teclado use
+            // relatórios de 32 ou 64) ou sem ele
+            var d = r.Length % 2 == 1 && r[0] == 0 ? r.AsSpan(1).ToArray() : r;
             if (d.Length > 0 && (d[0] == payload[0] || d[0] == CmdUnhandled)) return d;
         }
         return null;

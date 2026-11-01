@@ -71,17 +71,22 @@ internal static class PcRgbService
                 var shortLink = shortDev is null ? null : HidSharpLink.TryOpen(shortDev);
                 if (shortDev is not null) Log.Write($"[Mouse] recetor (curto): {HidSharpLink.Describe(shortDev)} aberto={shortLink is not null}");
                 var link = new PairedHid(raw, shortLink);
-                var found = LogitechHidpp.Detect(new LoggingHid(link, "Mouse"));
+                var found = LogitechHidpp.Detect(new LoggingHid(link, "Mouse"), out var note);
                 if (found is null)
                 {
                     link.Dispose();
-                    MouseStatus = "Receiver found, but the mouse didn't answer — move it (to wake it up) and press Save and detect again. Close G HUB.";
+                    if (note is not null) Log.Write($"[Mouse] {note}");
+                    MouseStatus = note is not null
+                        ? $"Mouse answered, but without a known RGB feature ({note})"
+                        : "Receiver found, but the mouse didn't answer — move it (to wake it up) and press Save and detect again. Close G HUB.";
                 }
                 else
                 {
-                    var (idx, feature, zones) = found.Value;
-                    lights.Add(new LogitechMouseLight(link, idx, feature, zones));
-                    MouseStatus = $"Logitech mouse found ({zones.Count} zone(s), receiver slot {idx})";
+                    var (idx, feature, zones, page) = found.Value;
+                    Log.Write($"[Mouse] RGB {page:X4} no índice {feature}, {zones.Count} zona(s): " +
+                        string.Join("; ", zones.Select(z => $"zona {z.Index} loc {z.Location:X4} efeitos {string.Join(",", z.Effects.Keys.Select(k => k.ToString("X")))}")));
+                    lights.Add(new LogitechMouseLight(link, idx, feature, zones, page: page));
+                    MouseStatus = $"Logitech mouse found ({zones.Count} zone(s), receiver slot {idx}, {page:X4})";
                 }
             }
         }

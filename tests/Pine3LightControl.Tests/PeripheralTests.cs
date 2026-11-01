@@ -156,7 +156,8 @@ public class PeripheralTests
         var hid = new ScriptedHid(rx.Reply);
         var found = LogitechHidpp.Detect(hid);
         Assert.NotNull(found);
-        var (dev, feature, zones) = found!.Value;
+        var (dev, feature, zones, page) = found!.Value;
+        Assert.Equal(LogitechHidpp.FeatureRgbEffects, page);
         Assert.Equal(FakeReceiver.Dev, dev);
         Assert.Equal(FakeReceiver.Feature, feature);
         Assert.Equal(2, zones.Count);
@@ -193,4 +194,94 @@ public class PeripheralTests
     [Fact]
     public void Logitech_detect_returns_null_without_rgb_feature() =>
         Assert.Null(LogitechHidpp.Detect(new ScriptedHid(_ => null)));
+
+    // 0x8071 (G903 HERO): sem 0x8070, zonas lidas pelo INFO, efeitos com 0x10 e CONTROL antes
+    private sealed class FakeReceiver8071
+    {
+        public const byte Dev = 1, Feature = 0x0C, FeatureSetIdx = 0x01;
+        public readonly List<byte[]> Sent = new();
+        private readonly ushort[] _fx = { 0x0000, 0x0001, 0x0003, 0x000A };
+
+        public byte[]? Reply(byte[] w)
+        {
+            var r = new byte[20];
+            w.AsSpan(0, 4).CopyTo(r);
+            if (w[1] != Dev) return new byte[] { 0x10, w[1], 0x8F, 0x00, 0x01, 0x08, 0x00 };   // erro HID++ 1.0
+            if (w[2] == 0x00)
+            {
+                int pg = w[4] << 8 | w[5];
+                r[4] = pg == 0x8071 ? Feature : pg == 0x0001 ? FeatureSetIdx : (byte)0;
+                return r;
+            }
+            if (w[2] != Feature) return null;
+            switch (w[3])
+            {
+                case LogitechHidpp.Cmd2Info when w[4] == 0xFF && w[5] == 0xFF: r[6] = 2; break;          // 2 zonas
+                case LogitechHidpp.Cmd2Info when w[5] == 0xFF: r[4] = w[4]; r[7] = (byte)(w[4] + 1); r[8] = (byte)_fx.Length; break;
+                case LogitechHidpp.Cmd2Info: r[4] = w[4]; r[5] = w[5]; r[6] = (byte)(_fx[w[5]] >> 8); r[7] = (byte)_fx[w[5]]; break;
+                default: Sent.Add(w); break;
+            }
+            return r;
+        }
+    }
+
+    [Fact]
+    public async Task Logitech_8071_mouse_detects_and_takes_software_control()
+    {
+        var rx = new FakeReceiver8071();
+        var hid = new ScriptedHid(rx.Reply);
+        var found = LogitechHidpp.Detect(hid, out var note);
+        Assert.NotNull(found);
+        Assert.Null(note);
+        var (dev, feature, zones, page) = found!.Value;
+        Assert.Equal(LogitechHidpp.FeatureRgbEffects2, page);
+        Assert.Equal(2, zones.Count);
+        Assert.Equal(2, zones[1].Location);
+        Assert.Equal(3, zones[0].Effects[LogitechHidpp.FxBreathing]);
+
+        var mouse = new LogitechMouseLight(hid, dev, feature, zones, page: page);
+        mouse.SetColor(new RgbColor(0, 255, 0));
+        await mouse.WhenSent();
+        Assert.Equal(LogitechHidpp.Cmd2Control, rx.Sent[0][3]);
+        Assert.Equal(new byte[] { 1, 3, 5 }, rx.Sent[0][4..7]);
+        var fx = rx.Sent[1];
+        Assert.Equal(LogitechHidpp.Cmd2SetEffect, fx[3]);
+        Assert.Equal(new byte[] { 0, 1, 0, 255, 0 }, fx[4..9]);
+        Assert.Equal(1, fx[16]);
+        mouse.SetEffect(1);
+        await mouse.WhenSent();
+        Assert.Single(rx.Sent, w => w[3] == LogitechHidpp.Cmd2Control);   // CONTROL só uma vez
+    }
+
+    [Fact]
+    public void Logitech_detect_reports_features_when_no_rgb()
+    {
+        // Responde à raiz sem RGB; IFeatureSet com 2 funcionalidades
+        var hid = new ScriptedHid(w =>
+        {
+            var r = new byte[20];
+            w.AsSpan(0, 4).CopyTo(r);
+            if (w[1] != 1) return null;
+            if (w[2] == 0) { r[4] = (w[4] << 8 | w[5]) == 1 ? (byte)1 : (byte)0; return r; }
+            if (w[3] == LogitechHidpp.CmdFeatureCount) r[4] = 2;
+            else { r[4] = 0x10; r[5] = (byte)(w[4] == 1 ? 0x00 : 0x04); }
+            return r;
+        });
+        Assert.Null(LogitechHidpp.Detect(hid, out var note));
+        Assert.Contains("1000 1004", note);
+    }
+
+    [Fact]
+    public void Via_accepts_64_byte_reports_with_report_id()
+    {
+        // OK-M 75: relatórios de 64 bytes + report ID = 65
+        var hid = new ScriptedHid(w =>
+        {
+            var r = new byte[65];
+            r[1] = w[1];
+            if (w[1] == Via.CmdProtocolVersion) { r[2] = 0; r[3] = 12; }
+            return r;
+        });
+        Assert.Equal(12, Via.ProtocolVersion(hid));
+    }
 }
