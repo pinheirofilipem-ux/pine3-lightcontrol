@@ -18,6 +18,31 @@ permissions:
   contents: write
 
 jobs:
+  # Integração do Home Assistant num HA de teste (pytest-homeassistant-custom-component)
+  ha-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Dependências (HA de teste + Bluetooth, nas versões que o HA fixa)
+        run: |
+          pip install pytest-homeassistant-custom-component
+          python - > req.txt <<'PY'
+          import json, pathlib, homeassistant.components as c
+          base = pathlib.Path(c.__file__).parent
+          req = set()
+          for name in ("bluetooth", "usb", "bluetooth_adapters"):
+              req |= set(json.loads((base / name / "manifest.json").read_text()).get("requirements", []))
+          print("\n".join(sorted(req)))
+          PY
+          pip install -r req.txt
+      - name: Testes
+        run: |
+          python -m unittest discover -s tests/ha -v
+          pytest -c tests/ha_integration/pytest.ini --rootdir tests/ha_integration tests/ha_integration -v
+
   build:
     runs-on: windows-latest
     steps:

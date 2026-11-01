@@ -14,7 +14,7 @@
     <RootNamespace>Pine3LightControl</RootNamespace>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.5</Version>
+    <Version>0.1.6</Version>
     <Product>Pine3 Light Control</Product>
     <Company>magnificent3</Company>
     <Copyright>made by magnificent3</Copyright>
