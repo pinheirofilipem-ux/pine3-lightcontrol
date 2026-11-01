@@ -24,10 +24,10 @@ class Sp110eEntity(Entity):
             manufacturer="Sperll",
             model="SP110E",
             hw_version=(
-                f"{protocol.IC_MODELS[status.ic_model] if status.ic_model < len(protocol.IC_MODELS) else status.ic_model}, "
-                f"{protocol.RGB_ORDERS[status.rgb_order] if status.rgb_order < len(protocol.RGB_ORDERS) else status.rgb_order}, "
+                f"{protocol.IC_MODELS[status.ic_model] if 0 <= status.ic_model < len(protocol.IC_MODELS) else status.ic_model}, "
+                f"{protocol.RGB_ORDERS[status.rgb_order] if 0 <= status.rgb_order < len(protocol.RGB_ORDERS) else status.rgb_order}, "
                 f"{status.pixel_count} LEDs"
-                if status
+                if status and status.pixel_count > 0
                 else None
             ),
         )

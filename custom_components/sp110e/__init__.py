@@ -46,12 +46,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: Sp110eConfigEntry) -> bo
         )
     )
 
-    # Primeira leitura do estado; se falhar, o HA volta a tentar mais tarde
+    # Primeira leitura do estado; se a ligação falhar, o HA volta a tentar mais tarde
     try:
         await device.update()
     except Exception as err:  # noqa: BLE001
         await device.disconnect()
         raise ConfigEntryNotReady(f"Could not connect to {address}: {err}") from err
+    if device.status is None:
+        _LOGGER.warning("%s: ligado, mas o controlador não enviou o estado; a usar valores por omissão", device.name)
+        device.ensure_status()
 
     async def _refresh(_now: object) -> None:
         try:

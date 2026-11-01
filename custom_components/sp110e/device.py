@@ -14,7 +14,7 @@ from collections.abc import Callable
 import logging
 
 from bleak.backends.device import BLEDevice
-from bleak.exc import BleakError
+from bleak.exc import BleakCharacteristicNotFoundError, BleakError
 from bleak_retry_connector import (
     BLEAK_RETRY_EXCEPTIONS,
     BleakClientWithServiceCache,
@@ -107,18 +107,32 @@ class Sp110eDevice:
         )
         try:
             await client.start_notify(protocol.CHAR_UUID, self._on_notify)
-        except BleakError:
+        except BleakCharacteristicNotFoundError:
             # Cache de serviços desatualizada: limpa e tenta outra vez
             await client.clear_cache()
             await client.disconnect()
             raise
+        except BleakError as err:
+            if not client.is_connected:
+                raise
+            # Ligado mas o controlador recusou ativar as notificações: segue sem
+            # estado lido (os comandos funcionam na mesma).
+            _LOGGER.warning("%s: notificações recusadas (%s); a continuar sem ler o estado", self.name, err)
         self._client = client
         # Handshake logo após ligar (alguns firmwares cortam a ligação sem isto)
-        await self._write(client, protocol.check_device())
+        await self._write(client, protocol.HANDSHAKE, "handshake")
         return client
 
-    async def _write(self, client: BleakClientWithServiceCache, data: bytes) -> None:
-        await client.write_gatt_char(protocol.CHAR_UUID, data, response=True)
+    async def _write(self, client: BleakClientWithServiceCache, data: bytes, what: str = "") -> None:
+        """Escreve um comando. Se o controlador responder com um erro de protocolo
+        (ex.: "Unlikely Error") mas a ligação continuar ativa, regista e segue:
+        estes controladores baratos respondem com erro a comandos que executam."""
+        try:
+            await client.write_gatt_char(protocol.CHAR_UUID, data, response=True)
+        except BleakError as err:
+            if not client.is_connected:
+                raise
+            _LOGGER.debug("%s: %s %s respondido com erro: %s", self.name, what or "comando", data.hex(), err)
         await asyncio.sleep(WRITE_GAP)
 
     def _schedule_idle_disconnect(self) -> None:
@@ -171,6 +185,16 @@ class Sp110eDevice:
         except TimeoutError:
             _LOGGER.debug("%s: sem resposta ao pedido de estado", self.name)
         return self.status
+
+    def ensure_status(self) -> None:
+        """Sem estado lido (notificações recusadas ou sem resposta): assume um estado
+        inicial para a luz poder ser controlada; o estado real substitui-o se chegar."""
+        if self.status is None:
+            self.status = protocol.Status(
+                is_on=False, mode=protocol.MODE_STATIC, speed=128, brightness=255,
+                ic_model=-1, rgb_order=-1, pixel_count=0, rgb=(255, 255, 255), white=0,
+            )
+            self.available = True
 
     async def turn_on(
         self,

@@ -68,12 +68,14 @@ class FakeClient:
         self.notify = None
         FakeClient.instances.append(self)
 
+    silent = False   # True: o controlador nunca envia o estado
+
     async def start_notify(self, _uuid, cb):
         self.notify = cb
 
     async def write_gatt_char(self, _uuid, data, response=True):
         self.writes.append(bytes(data))
-        if data[3] in (0x10, 0xD5):
+        if data[3] in (0x10, 0xD5) and not FakeClient.silent:
             self.notify(None, bytearray(STATUS))
 
     async def disconnect(self):
@@ -205,3 +207,28 @@ async def test_manifest_matcher_catches_nameless_advert(hass: HomeAssistant) -> 
     assert matchers, "custom integration matchers not loaded"
     assert any(ble_device_matches(m, _nameless()) for m in matchers)
     assert any(ble_device_matches(m, INFO) for m in matchers)
+
+
+async def test_setup_without_state_still_creates_light(hass: HomeAssistant) -> None:
+    FakeClient.instances.clear()
+    FakeClient.silent = True
+    try:
+        entry = MockConfigEntry(domain=DOMAIN, unique_id=ADDRESS, title="SP110E 1E:B5",
+                                data={CONF_ADDRESS: ADDRESS, "name": "SP110E"})
+        entry.add_to_hass(hass)
+        with (
+            patch("custom_components.sp110e.bluetooth.async_ble_device_from_address", return_value=DEVICE),
+            patch("custom_components.sp110e.device.establish_connection", _fake_establish),
+            patch("custom_components.sp110e.device.WRITE_GAP", 0),
+            patch("custom_components.sp110e.device.STATUS_TIMEOUT", 0.05),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+            state = hass.states.get("light.sp110e_1e_b5")
+            assert state is not None and state.state == STATE_OFF
+            await hass.services.async_call("light", "turn_on", {"entity_id": "light.sp110e_1e_b5"}, blocking=True)
+            assert hass.states.get("light.sp110e_1e_b5").state == STATE_ON
+            assert FakeClient.instances[-1].writes[-1] == bytes.fromhex("000000aa")
+            assert await hass.config_entries.async_unload(entry.entry_id)
+    finally:
+        FakeClient.silent = False

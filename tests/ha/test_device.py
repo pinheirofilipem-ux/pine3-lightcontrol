@@ -35,8 +35,12 @@ class FakeClient:
         self.writes = []
         self.notify = None
         self.fail_next_write = False
+        self.protocol_error_on = set()   # comandos a que o controlador responde "Unlikely Error"
+        self.refuse_notify = False
 
     async def start_notify(self, _uuid, cb):
+        if self.refuse_notify:
+            raise bleak.exc.BleakError("GATT Protocol Error: Unlikely Error")
         self.notify = cb
 
     async def write_gatt_char(self, _uuid, data, response=True):
@@ -45,7 +49,10 @@ class FakeClient:
             self.is_connected = False
             raise bleak.exc.BleakError("disconnected")
         self.writes.append(bytes(data))
-        if data[3] in (0x10, 0xD5):
+        if data[3] in self.protocol_error_on:
+            # Ligação continua ativa, o controlador só responde com erro
+            raise bleak.exc.BleakError((14, "GATT Protocol Error: Unlikely Error"))
+        if data[3] in (0x10, 0xD5) and self.notify:
             self.notify(None, bytearray(STATUS))
 
     async def disconnect(self):
@@ -62,8 +69,11 @@ class DeviceTests(unittest.TestCase):
         self.mod.WRITE_GAP = 0
         self.clients = []
 
+        self.client_setup = lambda c: None
+
         async def fake_establish(_cls, _dev, _name, **_kw):
             c = FakeClient()
+            self.client_setup(c)
             self.clients.append(c)
             return c
 
@@ -85,7 +95,7 @@ class DeviceTests(unittest.TestCase):
 
             await self.dev.turn_on(rgb=(0, 255, 0), brightness=128)
             w = self.clients[0].writes
-            self.assertEqual(w[0][3], 0xD5)                       # handshake
+            self.assertEqual(w[0], bytes.fromhex("01b7e3d5"))     # handshake fixo
             self.assertEqual(w[1], bytes.fromhex("00000010"))     # get info
             self.assertEqual(w[2:], [bytes.fromhex("000000aa"), bytes.fromhex("8000002a"), bytes.fromhex("00ff001e")])
             self.assertEqual(self.dev.status.rgb, (0, 255, 0))
@@ -112,6 +122,38 @@ class DeviceTests(unittest.TestCase):
             self.assertEqual(len(self.clients), 2)
             self.assertEqual(self.clients[1].writes[-1], bytes.fromhex("c8000003"))
             self.assertEqual(self.dev.status.speed, 200)
+            await self.dev.disconnect()
+        self.run_async(go())
+
+    def test_protocol_errors_are_not_fatal(self):
+        """O SP110E do utilizador respondeu "Unlikely Error" (0x0E) com a ligação ativa."""
+        def setup(c):
+            c.protocol_error_on = {0xD5, 0xAA}
+        self.client_setup = setup
+
+        async def go():
+            s = await self.dev.update()
+            self.assertIsNotNone(s)
+            await self.dev.turn_on(rgb=(1, 2, 3))
+            self.assertEqual(len(self.clients), 1)                # não voltou a ligar
+            self.assertEqual(self.clients[0].writes[-1], bytes.fromhex("0102031e"))
+            self.assertTrue(self.dev.available)
+            await self.dev.disconnect()
+        self.run_async(go())
+
+    def test_without_notifications_uses_default_state(self):
+        def setup(c):
+            c.refuse_notify = True
+        self.client_setup = setup
+        self.mod.STATUS_TIMEOUT = 0.05
+
+        async def go():
+            self.assertIsNone(await self.dev.update())
+            self.dev.ensure_status()
+            self.assertFalse(self.dev.status.is_on)
+            await self.dev.turn_on(brightness=10)
+            self.assertTrue(self.dev.status.is_on)
+            self.assertEqual(self.clients[0].writes[-1], bytes.fromhex("0a00002a"))
             await self.dev.disconnect()
         self.run_async(go())
 

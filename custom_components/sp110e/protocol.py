@@ -134,6 +134,11 @@ def get_info() -> bytes:
     return _cmd(CMD_GET_INFO)
 
 
+# Handshake fixo usado pelo projeto C# SiKaminski/BluetoothLE-LED-Strip e pelo gist
+# do RufusVS. Com bytes aleatórios o SP110E do utilizador respondia "Unlikely Error".
+HANDSHAKE = bytes.fromhex("01b7e3d5")
+
+
 def check_device(rng: random.Random | None = None) -> bytes:
     """Handshake: alguns firmwares cortam a ligação se não o receberem logo."""
     rng = rng or random
