@@ -89,6 +89,9 @@ public partial class App : Application
             Dpapi.Install();
             var config = new AppConfig();
             config.HomeAssistant.Entities.Add("light.test");
+            // OpenRGB sem servidor: o cartão aparece como "offline" e a app não pode falhar por isso
+            config.OpenRgb.Enabled = true;
+            config.OpenRgb.Devices.Add("Test GPU");
             config.Scenes.Add(new Core.Scenes.Scene
             {
                 Name = "Test scene",

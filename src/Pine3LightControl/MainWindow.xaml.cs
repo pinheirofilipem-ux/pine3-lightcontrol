@@ -26,6 +26,8 @@ public partial class MainWindow : Window
 
     // Lights
     private readonly ObservableCollection<LightVm> _haCards = new();
+    private readonly ObservableCollection<LightVm> _pcCards = new();
+    private readonly ObservableCollection<OpenRgbDeviceVm> _orgbDevices = new();
     private readonly HashSet<string> _dirty = new();
     private bool _syncQueued;
 
@@ -49,6 +51,8 @@ public partial class MainWindow : Window
         DataPath.Text = AppPaths.DataDir;
 
         HaLightsList.ItemsSource = _haCards;
+        PcLightsList.ItemsSource = _pcCards;
+        OrgbDevices.ItemsSource = _orgbDevices;
         ScenesList.ItemsSource = _scenes;
         QuickScenes.ItemsSource = _scenes;
         NewSceneLights.ItemsSource = _newSceneLights;
@@ -73,6 +77,10 @@ public partial class MainWindow : Window
         _hub.Ha.EntitiesReloaded += () => Dispatcher.BeginInvoke(RebuildEntities);
 
         _hub.ScenesChanged += () => Dispatcher.BeginInvoke(RebuildScenes);
+        _hub.OpenRgb.ConnectionChanged += () => Dispatcher.BeginInvoke(UpdateOrgbStatus);
+        _hub.OpenRgb.DevicesReloaded += () => Dispatcher.BeginInvoke(RebuildOrgbDevices);
+        UpdateOrgbStatus();
+        RebuildOrgbDevices();
         RebuildScenes();
         _haTimer.Tick += (_, _) => RefreshEntityStates();
 
@@ -115,6 +123,7 @@ public partial class MainWindow : Window
         var tag = (string)item.Tag;
         PageLights.Visibility = tag == "Lights" ? Visibility.Visible : Visibility.Collapsed;
         PageScenes.Visibility = tag == "Scenes" ? Visibility.Visible : Visibility.Collapsed;
+        PagePc.Visibility = tag == "Pc" ? Visibility.Visible : Visibility.Collapsed;
         PageHomeAssistant.Visibility = tag == "HomeAssistant" ? Visibility.Visible : Visibility.Collapsed;
         PageSettings.Visibility = tag == "Settings" ? Visibility.Visible : Visibility.Collapsed;
         PageAbout.Visibility = tag == "About" ? Visibility.Visible : Visibility.Collapsed;
@@ -131,6 +140,7 @@ public partial class MainWindow : Window
         Nav.SelectedItem = Nav.Items.OfType<ListBoxItem>().First(i => (string)i.Tag == tag);
 
     private void GoScenes_Click(object sender, RoutedEventArgs e) => Go("Scenes");
+    private void GoPc_Click(object sender, RoutedEventArgs e) => Go("Pc");
     private void GoHa_Click(object sender, RoutedEventArgs e) => Go("HomeAssistant");
 
     // ══ Lights ══════════════════════════════════════════════════════════════
@@ -138,8 +148,10 @@ public partial class MainWindow : Window
     private void RebuildLights()
     {
         Sync(_haCards, _hub.HaLights.Cast<ILight>().ToList());
+        Sync(_pcCards, _hub.OpenRgbLights.Cast<ILight>().ToList());
+        PcHeader.Visibility = _pcCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         HaHeader.Visibility = _haCards.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        LightsEmpty.Visibility = _haCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        LightsEmpty.Visibility = _haCards.Count + _pcCards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         RebuildNewSceneLights();
         foreach (var e in _entities) e.SetSelectedSilently(_hub.IsHaEntitySelected(e.EntityId));
     }
@@ -175,7 +187,7 @@ public partial class MainWindow : Window
                 _dirty.Clear();
                 _syncQueued = false;
             }
-            foreach (var c in _haCards)
+            foreach (var c in _haCards.Concat(_pcCards))
                 if (ids.Contains(c.Light.Id)) c.Sync();
         });
     }
@@ -205,6 +217,44 @@ public partial class MainWindow : Window
     private void Activate_Click(object sender, RoutedEventArgs e) => Vm<LightVm>(sender)?.Activate();
     private void AllOn_Click(object sender, RoutedEventArgs e) => _hub.SetAllPower(true);
     private void AllOff_Click(object sender, RoutedEventArgs e) => _hub.SetAllPower(false);
+
+    // ══ PC RGB (OpenRGB) ══════════════════════════════════════════════════
+
+    private void UpdateOrgbStatus()
+    {
+        OrgbStatus.Text = _hub.OpenRgb.StateText;
+    }
+
+    private void RebuildOrgbDevices()
+    {
+        _orgbDevices.Clear();
+        foreach (var (name, type, count) in _hub.OpenRgbGroups)
+            _orgbDevices.Add(new OpenRgbDeviceVm(name, type, count, _hub.IsOpenRgbSelected(name),
+                (n, on) => _hub.SetOpenRgbSelected(n, on)));
+        // Escolhidos que o OpenRGB não está a mostrar continuam na lista para se poderem desmarcar
+        foreach (var name in _hub.Config.OpenRgb.Devices.Where(n => _orgbDevices.All(d => d.Name != n)).ToList())
+            _orgbDevices.Add(new OpenRgbDeviceVm(name, "not found", 0, true, (n, on) => _hub.SetOpenRgbSelected(n, on)));
+        OrgbEmpty.Visibility = _orgbDevices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateOrgbStatus();
+    }
+
+    private async void OrgbConnect_Click(object sender, RoutedEventArgs e)
+    {
+        var o = _hub.Config.OpenRgb;
+        if (!int.TryParse(OrgbPort.Text.Trim(), out var port) || port is < 1 or > 65535)
+        {
+            OrgbStatus.Text = "Invalid port.";
+            return;
+        }
+        o.Host = string.IsNullOrWhiteSpace(OrgbHost.Text) ? "127.0.0.1" : OrgbHost.Text.Trim();
+        o.Port = port;
+        o.Enabled = OrgbEnabled.IsChecked == true;
+        _hub.Config.Save();
+        await _hub.ReconnectOpenRgbAsync();
+        UpdateOrgbStatus();
+    }
+
+    private void OrgbDownload_Click(object sender, RoutedEventArgs e) => Shell.Open("https://openrgb.org");
 
     // ══ Scenes ════════════════════════════════════════════════════════════
 
@@ -433,6 +483,9 @@ public partial class MainWindow : Window
     {
         var c = _hub.Config;
         HaUrlBox.Text = c.HomeAssistant.Url;
+        OrgbHost.Text = c.OpenRgb.Host;
+        OrgbPort.Text = c.OpenRgb.Port.ToString();
+        OrgbEnabled.IsChecked = c.OpenRgb.Enabled;
         HaInsecure.IsChecked = c.HomeAssistant.AllowInvalidCertificate;
         SetTokenHint();
         AppearanceCombo.SelectedItem = AppearanceCombo.Items.OfType<ComboBoxItem>()

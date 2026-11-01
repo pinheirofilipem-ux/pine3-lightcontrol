@@ -8,6 +8,10 @@ HA, com a integração em `custom_components/sp110e`.
 ## Regras
 - Responder em PT-PT. Comentários do código em PT; texto da UI em inglês (como o pine3-monitor).
 - `Pine3LightControl.Core` (net10.0) **não** pode usar APIs do Windows: é o que os testes cobrem.
+- OpenRGB: `Core/OpenRgb` fala o protocolo SDK v1 (TCP 6742; formato confirmado no código do
+  OpenRGB release_1.1). Dispositivos com o mesmo nome formam uma luz (`OpenRgbLight`); brilho =
+  cor escalada (modo Direct). Placa de referência 6950 XT = Cooler Master `2516:014D`, RAM
+  Vengeance RGB Pro DDR4 por SMBus (precisa do OpenRGB como administrador + PawnIO).
 - Cenas: `Core/Scenes` (`SceneEngine.Capture/Apply`), guardadas em `AppConfig.Scenes`.
 - Toda a luz implementa `ILight` (via `LightBase`); os comandos passam por uma `SendQueue`
   (o último valor de cada tipo ganha) para os sliders não inundarem o HA.

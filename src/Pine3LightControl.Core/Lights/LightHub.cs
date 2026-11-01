@@ -1,4 +1,5 @@
 using Pine3LightControl.Core.HomeAssistant;
+using Pine3LightControl.Core.OpenRgb;
 using Pine3LightControl.Core.Scenes;
 
 namespace Pine3LightControl.Core.Lights;
@@ -11,6 +12,7 @@ public sealed class LightHub : IAsyncDisposable
 {
     private readonly object _gate = new();
     private readonly List<HaLight> _ha = new();
+    private readonly List<OpenRgbLight> _orgb = new();
 
     public LightHub(AppConfig config)
     {
@@ -23,10 +25,16 @@ public sealed class LightHub : IAsyncDisposable
         };
         Ha.EntitiesReloaded += RefreshHa;
         Ha.ConnectionChanged += RefreshHa;
+        OpenRgb.DevicesReloaded += () => SyncOpenRgbLights();
+        OpenRgb.ConnectionChanged += () =>
+        {
+            foreach (var l in OpenRgbLights) l.ConnectionChanged();
+        };
     }
 
     public AppConfig Config { get; }
     public HaClient Ha { get; } = new();
+    public OpenRgbClient OpenRgb { get; } = new();
 
     /// <summary>Luzes adicionadas/removidas.</summary>
     public event Action? ListChanged;
@@ -37,7 +45,12 @@ public sealed class LightHub : IAsyncDisposable
 
     public IReadOnlyList<ILight> Lights
     {
-        get { lock (_gate) return _ha.ToArray(); }
+        get { lock (_gate) return _ha.Cast<ILight>().Concat(_orgb).ToArray(); }
+    }
+
+    public IReadOnlyList<OpenRgbLight> OpenRgbLights
+    {
+        get { lock (_gate) return _orgb.ToArray(); }
     }
 
     public IReadOnlyList<HaLight> HaLights
@@ -50,7 +63,65 @@ public sealed class LightHub : IAsyncDisposable
     public async Task StartAsync()
     {
         SyncHaLights();
+        SyncOpenRgbLights();
         await ReconnectHaAsync().ConfigureAwait(false);
+        await ReconnectOpenRgbAsync().ConfigureAwait(false);
+    }
+
+    // ── OpenRGB ──────────────────────────────────────────────────────────────
+
+    public Task ReconnectOpenRgbAsync()
+    {
+        var o = Config.OpenRgb;
+        return o.Enabled ? OpenRgb.RestartAsync(o.Host, o.Port) : OpenRgb.StopAsync();
+    }
+
+    /// <summary>Grupos de dispositivos que o OpenRGB está a mostrar (nome, tipo, quantidade).</summary>
+    public IReadOnlyList<(string Name, string Type, int Count)> OpenRgbGroups =>
+        OpenRgb.Devices.GroupBy(d => d.Name)
+            .Select(g => (g.Key, g.First().TypeName, g.Count()))
+            .ToArray();
+
+    public bool IsOpenRgbSelected(string group) => Config.OpenRgb.Devices.Contains(group);
+
+    public void SetOpenRgbSelected(string group, bool selected)
+    {
+        var list = Config.OpenRgb.Devices;
+        if (selected == list.Contains(group)) return;
+        if (selected) list.Add(group); else list.Remove(group);
+        Config.Save();
+        SyncOpenRgbLights();
+    }
+
+    private void SyncOpenRgbLights()
+    {
+        var devices = OpenRgb.Devices;
+        var created = new List<OpenRgbLight>();
+        bool changed = false;
+        lock (_gate)
+        {
+            var keep = new List<OpenRgbLight>();
+            foreach (var name in Config.OpenRgb.Devices)
+            {
+                var l = _orgb.FirstOrDefault(x => x.GroupName == name);
+                if (l is null)
+                {
+                    l = new OpenRgbLight(OpenRgb, name);
+                    var captured = l;
+                    l.Changed += () => LightChanged?.Invoke(captured);
+                    created.Add(l);
+                    changed = true;
+                }
+                keep.Add(l);
+            }
+            if (keep.Count != _orgb.Count || !keep.SequenceEqual(_orgb)) changed = true;
+            _orgb.Clear();
+            _orgb.AddRange(keep);
+        }
+        // Luz nova lê a cor que os LEDs têm agora; as existentes mantêm o estado da app
+        foreach (var l in OpenRgbLights)
+            l.Update(devices.Where(d => d.Name == l.GroupName), readState: created.Contains(l) || !l.HasDevices);
+        if (changed) ListChanged?.Invoke();
     }
 
     // ── Home Assistant ───────────────────────────────────────────────────────
@@ -183,5 +254,9 @@ public sealed class LightHub : IAsyncDisposable
             if (l.IsAvailable && (l.Features & LightFeatures.OnOff) != 0) l.SetPower(on);
     }
 
-    public async ValueTask DisposeAsync() => await Ha.DisposeAsync().ConfigureAwait(false);
+    public async ValueTask DisposeAsync()
+    {
+        await Ha.DisposeAsync().ConfigureAwait(false);
+        await OpenRgb.DisposeAsync().ConfigureAwait(false);
+    }
 }

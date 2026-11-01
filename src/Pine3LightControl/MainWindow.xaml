@@ -155,6 +155,12 @@
                         <TextBlock Text="Scenes" />
                     </StackPanel>
                 </ListBoxItem>
+                <ListBoxItem Tag="Pc">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE7F8;" Width="28" VerticalAlignment="Center" />
+                        <TextBlock Text="PC RGB" />
+                    </StackPanel>
+                </ListBoxItem>
                 <ListBoxItem Tag="HomeAssistant">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock FontFamily="{StaticResource Glyphs}" Text="&#xE80F;" Width="28" VerticalAlignment="Center" />
@@ -214,12 +220,20 @@
                         <StackPanel>
                             <TextBlock Text="No lights yet" Style="{StaticResource CardTitle}" />
                             <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
-                                       Text="Connect Home Assistant and choose which lights, switches and scenes to show here." />
+                                       Text="Connect Home Assistant and choose which lights, switches and scenes to show here, and add your PC's RGB (graphics card, memory, peripherals) through OpenRGB." />
                             <WrapPanel>
-                                <Button Content="Connect Home Assistant" Click="GoHa_Click" />
+                                <Button Content="Connect Home Assistant" Margin="0,0,8,0" Click="GoHa_Click" />
+                                <Button Content="Add PC RGB" Click="GoPc_Click" />
                             </WrapPanel>
                         </StackPanel>
                     </Border>
+
+                    <TextBlock x:Name="PcHeader" Text="PC" Style="{StaticResource CardTitle}" />
+                    <ItemsControl x:Name="PcLightsList" ItemTemplate="{StaticResource LightCard}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
 
                     <TextBlock x:Name="HaHeader" Text="Home Assistant" Style="{StaticResource CardTitle}" Margin="0,8,0,8" />
                     <ItemsControl x:Name="HaLightsList" ItemTemplate="{StaticResource LightCard}">
@@ -286,6 +300,64 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ── PC RGB (OpenRGB) ── -->
+            <ScrollViewer x:Name="PagePc" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+                    <TextBlock Text="PC RGB" Style="{StaticResource PageTitle}" />
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="OpenRGB" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                       Text="Graphics card, memory and other PC RGB are controlled through OpenRGB, which must be running in the background with its SDK server on." />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10" TextWrapping="Wrap">
+                                <Run Text="1. Install OpenRGB and run it as administrator (needed for the memory)." /><LineBreak />
+                                <Run Text="2. In OpenRGB: SDK Server → Start Server. In Settings, turn on Start at login, Start minimized and Start server." /><LineBreak />
+                                <Run Text="3. Close iCUE and the AMD RGB LED tool: they fight OpenRGB for the same LEDs." />
+                            </TextBlock>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="200" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="90" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Address" Style="{StaticResource FieldLabel}" />
+                                <TextBox x:Name="OrgbHost" Grid.Column="1" Margin="0,0,16,10" />
+                                <TextBlock Grid.Column="2" Text="Port" Style="{StaticResource FieldLabel}" />
+                                <TextBox x:Name="OrgbPort" Grid.Column="3" Margin="0,0,0,10" />
+                            </Grid>
+                            <WrapPanel>
+                                <CheckBox x:Name="OrgbEnabled" Content="Use OpenRGB" VerticalAlignment="Center" Margin="0,0,16,8" />
+                                <Button Content="Save and connect" Margin="0,0,8,8" Click="OrgbConnect_Click" />
+                                <Button Content="Get OpenRGB" Margin="0,0,8,8" Click="OrgbDownload_Click" />
+                            </WrapPanel>
+                            <TextBlock x:Name="OrgbStatus" Style="{StaticResource Muted}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="Devices" Style="{StaticResource CardTitle}" />
+                            <TextBlock Style="{StaticResource Muted}" Margin="0,0,0,10"
+                                       Text="Tick the devices to show on the Lights page and use in scenes. Devices with the same name (e.g. memory modules) are controlled together." />
+                            <TextBlock x:Name="OrgbEmpty" Style="{StaticResource Muted}" Text="Connect to OpenRGB to see your devices." />
+                            <ItemsControl x:Name="OrgbDevices">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:OpenRgbDeviceVm}">
+                                        <DockPanel Margin="0,3">
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding Detail}" Style="{StaticResource Muted}"
+                                                       VerticalAlignment="Center" Margin="12,0,0,0" />
+                                            <CheckBox IsChecked="{Binding Selected}" Content="{Binding Name}" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

@@ -27,6 +27,16 @@ public sealed class HomeAssistantConfig
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrEmpty(TokenProtected);
 }
 
+/// <summary>Ligação ao servidor SDK do OpenRGB (gráfica, memórias, periféricos...).</summary>
+public sealed class OpenRgbConfig
+{
+    public bool Enabled { get; set; }
+    public string Host { get; set; } = "127.0.0.1";
+    public int Port { get; set; } = OpenRgb.OpenRgbProtocol.DefaultPort;
+    /// <summary>Grupos (nome do dispositivo) a mostrar no painel, pela ordem.</summary>
+    public List<string> Devices { get; set; } = new();
+}
+
 /// <summary>Definições persistidas em %APPDATA%\Pine3LightControl\config.json.</summary>
 public sealed class AppConfig
 {
@@ -35,6 +45,7 @@ public sealed class AppConfig
     public bool StartMinimized { get; set; } = true;
     public bool TrayHintShown { get; set; }
     public HomeAssistantConfig HomeAssistant { get; set; } = new();
+    public OpenRgbConfig OpenRgb { get; set; } = new();
     /// <summary>Cenas: estado guardado de várias luzes, ativado de uma vez.</summary>
     public List<Scenes.Scene> Scenes { get; set; } = new();
 

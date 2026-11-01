@@ -12,6 +12,9 @@ made by magnificent3
   with live state updates. You choose which entities to show: lights (brightness, color,
   color temperature, effects, depending on what each light supports), switches,
   input booleans, fans, scenes, scripts and buttons.
+- **PC RGB (OpenRGB):** graphics card, memory and any other device OpenRGB sees, through
+  its SDK server (TCP 6742): on/off, brightness and color. Devices with the same name
+  (e.g. four memory modules) are controlled as one light.
 - **Scenes:** set the lights the way you want, tick the ones that belong to the scene and
   save it. One click (or the tray) puts every light back the same way: on/off,
   brightness, color or color temperature, effect, and Home Assistant scenes/scripts to run.
@@ -52,7 +55,15 @@ In Home Assistant, open your profile → Security → Long-lived access tokens �
 In the app, go to **Home Assistant**, fill in the address
 (e.g. `http://homeassistant.local:8123`) and the token, then press **Save and connect**.
 Tick the entities you want under "What to control". The token is stored encrypted for
-your Windows user (DPAPI). Then create scenes on the **Scenes** page.
+your Windows user (DPAPI).
+
+For the PC's own RGB, install [OpenRGB](https://openrgb.org) and run it as administrator
+(the memory needs it), start its SDK server (SDK Server → Start Server; in Settings turn on
+Start at login, Start minimized and Start server), and close iCUE and the AMD RGB tool.
+In the app, open **PC RGB**, tick **Use OpenRGB**, press **Save and connect** and tick the
+devices to show.
+
+Then create scenes on the **Scenes** page.
 
 ## Where things live
 
@@ -65,10 +76,10 @@ your Windows user (DPAPI). Then create scenes on the **Scenes** page.
 ## Project layout
 
 ```
-src/Pine3LightControl.Core   no Windows APIs: Home Assistant client, light model,
-                             scenes, config (testable anywhere)
+src/Pine3LightControl.Core   no Windows APIs: Home Assistant and OpenRGB clients,
+                             light model, scenes, config (testable anywhere)
 src/Pine3LightControl        WPF app: tray, control panel
-tests/                       xUnit: send queue, scenes, fake HA server
+tests/                       xUnit: send queue, scenes, fake HA and OpenRGB servers
 custom_components/sp110e/    Home Assistant integration for SP110E (HACS)
 tests/ha, tests/ha_integration   Python tests of the integration
 installer.iss                Inno Setup script
