@@ -2,26 +2,43 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
+    async_ble_device_from_address,
     async_discovered_service_info,
 )
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 
-from .const import DEVICE_NAMES, DOMAIN
+from .const import ADVERTISED_SERVICE_UUID, DEFAULT_NAME, DEVICE_NAMES, DOMAIN, GATT_SERVICE_UUID
+
+_MAC = re.compile(r"^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$")
 
 
 def _is_sp110e(info: BluetoothServiceInfoBleak) -> bool:
-    return (info.name or "").upper().startswith(DEVICE_NAMES)
+    uuids = {u.lower() for u in info.service_uuids}
+    return (
+        (info.name or "").upper().startswith(DEVICE_NAMES)
+        or ADVERTISED_SERVICE_UUID in uuids
+        or GATT_SERVICE_UUID in uuids
+    )
+
+
+def _name(info: BluetoothServiceInfoBleak) -> str:
+    """Nome anunciado; sem resposta ao scan o HA só conhece o endereço."""
+    name = (info.name or "").strip()
+    if not name or _MAC.match(name) or name.replace("-", ":").upper() == info.address.upper():
+        return DEFAULT_NAME
+    return name
 
 
 def _title(info: BluetoothServiceInfoBleak) -> str:
-    return f"{info.name or 'SP110E'} {info.address[-5:]}"
+    return f"{_name(info)} {info.address[-5:]}"
 
 
 class Sp110eConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -64,7 +81,7 @@ class Sp110eConfigFlow(ConfigFlow, domain=DOMAIN):
             if _is_sp110e(info) and info.address.upper() not in current:
                 self._found[info.address] = info
         if not self._found:
-            return self.async_abort(reason="no_devices_found")
+            return await self.async_step_manual()
 
         return self.async_show_form(
             step_id="user",
@@ -73,8 +90,30 @@ class Sp110eConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    async def async_step_manual(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Nada encontrado automaticamente: escrever o endereço (ex.: 65:56:04:0A:1E:B5)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            address = user_input[CONF_ADDRESS].strip().upper().replace("-", ":")
+            if not _MAC.match(address):
+                errors[CONF_ADDRESS] = "invalid_address"
+            elif async_ble_device_from_address(self.hass, address, connectable=True) is None:
+                errors[CONF_ADDRESS] = "not_in_range"
+            else:
+                await self.async_set_unique_id(address, raise_on_progress=False)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=f"{DEFAULT_NAME} {address[-5:]}",
+                    data={CONF_ADDRESS: address, CONF_NAME: DEFAULT_NAME},
+                )
+        return self.async_show_form(
+            step_id="manual",
+            data_schema=vol.Schema({vol.Required(CONF_ADDRESS): str}),
+            errors=errors,
+        )
+
     def _create(self, info: BluetoothServiceInfoBleak) -> ConfigFlowResult:
         return self.async_create_entry(
             title=_title(info),
-            data={CONF_ADDRESS: info.address.upper(), CONF_NAME: info.name or "SP110E"},
+            data={CONF_ADDRESS: info.address.upper(), CONF_NAME: _name(info)},
         )

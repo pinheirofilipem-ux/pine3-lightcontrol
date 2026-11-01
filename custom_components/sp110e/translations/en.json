@@ -4,21 +4,37 @@
     "step": {
       "user": {
         "description": "Choose the SP110E controller to add.",
-        "data": { "address": "Device" }
+        "data": {
+          "address": "Device"
+        }
       },
       "bluetooth_confirm": {
         "description": "Set up {name}? Close the LED Hue app on your phone first: the controller accepts only one connection at a time."
+      },
+      "manual": {
+        "description": "No SP110E found automatically. Enter its Bluetooth address (e.g. 65:56:04:0A:1E:B5). It must be within range of Home Assistant's Bluetooth or an ESPHome Bluetooth proxy.",
+        "data": {
+          "address": "Bluetooth address"
+        }
       }
     },
     "abort": {
       "already_configured": "This controller is already configured.",
       "no_devices_found": "No SP110E controllers found. Make sure it is powered and within range of a Bluetooth adapter or ESPHome Bluetooth proxy."
+    },
+    "error": {
+      "invalid_address": "Not a valid Bluetooth address (format AA:BB:CC:DD:EE:FF).",
+      "not_in_range": "Home Assistant can't see this address right now. Check that the controller is powered and in range."
     }
   },
   "entity": {
     "number": {
-      "speed": { "name": "Effect speed" },
-      "white": { "name": "White channel" }
+      "speed": {
+        "name": "Effect speed"
+      },
+      "white": {
+        "name": "White channel"
+      }
     }
   }
 }

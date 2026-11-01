@@ -4,21 +4,37 @@
     "step": {
       "user": {
         "description": "Escolhe o controlador SP110E a adicionar.",
-        "data": { "address": "Dispositivo" }
+        "data": {
+          "address": "Dispositivo"
+        }
       },
       "bluetooth_confirm": {
         "description": "Configurar {name}? Fecha primeiro a app LED Hue no telemóvel: o controlador só aceita uma ligação de cada vez."
+      },
+      "manual": {
+        "description": "Nenhum SP110E encontrado automaticamente. Escreve o endereço Bluetooth (ex.: 65:56:04:0A:1E:B5). Tem de estar ao alcance do Bluetooth do Home Assistant ou de um proxy Bluetooth do ESPHome.",
+        "data": {
+          "address": "Endereço Bluetooth"
+        }
       }
     },
     "abort": {
       "already_configured": "Este controlador já está configurado.",
       "no_devices_found": "Nenhum SP110E encontrado. Confirma que está ligado e ao alcance de um adaptador Bluetooth ou de um proxy Bluetooth do ESPHome."
+    },
+    "error": {
+      "invalid_address": "Endereço Bluetooth inválido (formato AA:BB:CC:DD:EE:FF).",
+      "not_in_range": "O Home Assistant não está a ver este endereço. Confirma que o controlador está ligado e ao alcance."
     }
   },
   "entity": {
     "number": {
-      "speed": { "name": "Velocidade do efeito" },
-      "white": { "name": "Canal branco" }
+      "speed": {
+        "name": "Velocidade do efeito"
+      },
+      "white": {
+        "name": "Canal branco"
+      }
     }
   }
 }

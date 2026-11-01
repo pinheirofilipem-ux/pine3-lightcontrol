@@ -4,3 +4,5 @@ dist/
 TestResults/
 *.user
 .vs/
+__pycache__/
+*.pyc

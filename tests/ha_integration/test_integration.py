@@ -41,6 +41,24 @@ INFO = BluetoothServiceInfoBleak(
 )
 
 
+def _nameless() -> BluetoothServiceInfoBleak:
+    adv = AdvertisementData(
+        local_name=None,
+        manufacturer_data={22117: bytes.fromhex("040a1eb5")},
+        service_data={},
+        service_uuids=["0000ffb0-0000-1000-8000-00805f9b34fb"],
+        tx_power=None,
+        rssi=-82,
+        platform_data=(),
+    )
+    return BluetoothServiceInfoBleak(
+        name=ADDRESS, address=ADDRESS, rssi=-82,
+        manufacturer_data={22117: bytes.fromhex("040a1eb5")}, service_data={},
+        service_uuids=["0000ffb0-0000-1000-8000-00805f9b34fb"], source="local",
+        device=BLEDevice(ADDRESS, None, {}), advertisement=adv, connectable=True, time=0, tx_power=None,
+    )
+
+
 class FakeClient:
     instances: list["FakeClient"] = []
 
@@ -89,14 +107,43 @@ async def test_user_flow(hass: HomeAssistant) -> None:
     with patch("custom_components.sp110e.config_flow.async_discovered_service_info", return_value=[INFO]):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
         assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "user"
         with patch("custom_components.sp110e.async_setup_entry", return_value=True):
             result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_ADDRESS: ADDRESS})
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
+
+async def test_discovery_without_name(hass: HomeAssistant) -> None:
+    """Scan passivo: sem nome, só o endereço e o serviço FFB0 (o que o HA do utilizador vê)."""
+    nameless = _nameless()
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_BLUETOOTH}, data=nameless)
+    assert result["type"] is FlowResultType.FORM
+    with patch("custom_components.sp110e.async_setup_entry", return_value=True):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    assert result["title"] == "SP110E 1E:B5"
+    assert result["data"]["name"] == "SP110E"
+
+
+async def test_manual_address(hass: HomeAssistant) -> None:
     with patch("custom_components.sp110e.config_flow.async_discovered_service_info", return_value=[]):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "no_devices_found"
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "manual"
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_ADDRESS: "nope"})
+    assert result["errors"] == {CONF_ADDRESS: "invalid_address"}
+
+    with patch("custom_components.sp110e.config_flow.async_ble_device_from_address", return_value=None):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_ADDRESS: ADDRESS})
+    assert result["errors"] == {CONF_ADDRESS: "not_in_range"}
+
+    with (
+        patch("custom_components.sp110e.config_flow.async_ble_device_from_address", return_value=DEVICE),
+        patch("custom_components.sp110e.async_setup_entry", return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_ADDRESS: "65-56-04-0a-1e-b5"})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_ADDRESS] == ADDRESS
 
 
 async def test_setup_entities_and_services(hass: HomeAssistant) -> None:
@@ -147,3 +194,14 @@ async def test_setup_entities_and_services(hass: HomeAssistant) -> None:
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
         assert not client.is_connected
+
+
+async def test_manifest_matcher_catches_nameless_advert(hass: HomeAssistant) -> None:
+    """Os matchers do manifest.json apanham o anúncio real (sem nome, serviço FFB0)."""
+    from homeassistant.components.bluetooth.match import ble_device_matches
+    from homeassistant.loader import async_get_bluetooth
+
+    matchers = [m for m in await async_get_bluetooth(hass) if m["domain"] == DOMAIN]
+    assert matchers, "custom integration matchers not loaded"
+    assert any(ble_device_matches(m, _nameless()) for m in matchers)
+    assert any(ble_device_matches(m, INFO) for m in matchers)
