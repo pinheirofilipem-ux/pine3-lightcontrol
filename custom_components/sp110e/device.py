@@ -33,6 +33,10 @@ STATUS_TIMEOUT = 5.0
 # Ao voltar a ser visto (ex.: o PC que o alimenta voltou a ligar), tenta ligar no máximo
 # uma vez neste intervalo: os anúncios chegam várias vezes por segundo.
 RECONNECT_MIN_INTERVAL = 15.0
+# Tempo máximo de cada tentativa (ligar + escrever). Sem isto, um controlador ou adaptador
+# que nunca responde deixava a operação (e o arranque da integração) à espera para sempre.
+OPERATION_TIMEOUT = 30.0
+DISCONNECT_TIMEOUT = 5.0
 
 
 class Sp110eDevice:
@@ -158,6 +162,8 @@ class Sp110eDevice:
             disconnected_callback=self._on_disconnected,
             ble_device_callback=lambda: self._ble_device,
         )
+        # Guarda já: se o resto falhar ou exceder o tempo, _drop_client desliga-o
+        self._client = client
         try:
             await client.start_notify(protocol.CHAR_UUID, self._on_notify)
         except BleakCharacteristicNotFoundError:
@@ -196,30 +202,39 @@ class Sp110eDevice:
             IDLE_DISCONNECT_SECONDS, lambda: asyncio.ensure_future(self.disconnect())
         )
 
+    async def _drop_client(self) -> None:
+        """Larga a ligação atual (meio aberta ou pendurada) sem ficar à espera dela."""
+        client, self._client = self._client, None
+        if client is None:
+            return
+        try:
+            async with asyncio.timeout(DISCONNECT_TIMEOUT):
+                await client.disconnect()
+        except (TimeoutError, BleakError, EOFError, OSError) as err:
+            _LOGGER.debug("%s: desligar falhou: %s", self.name, err)
+
     async def disconnect(self) -> None:
         if self._idle_handle is not None:
             self._idle_handle.cancel()
             self._idle_handle = None
         async with self._lock:
-            client, self._client = self._client, None
-            if client is not None and client.is_connected:
-                try:
-                    await client.disconnect()
-                except BleakError:
-                    pass
+            await self._drop_client()
 
     async def _send(self, *commands: bytes) -> None:
         """Envia comandos (liga se preciso). Tenta uma segunda vez se a ligação caiu."""
         async with self._lock:
             for attempt in (1, 2):
                 try:
-                    client = await self._ensure_connected()
-                    for cmd in commands:
-                        await self._write(client, cmd)
+                    async with asyncio.timeout(OPERATION_TIMEOUT):
+                        client = await self._ensure_connected()
+                        for cmd in commands:
+                            await self._write(client, cmd)
                     self.available = True
                     break
-                except BLEAK_RETRY_EXCEPTIONS as err:
-                    self._client = None
+                except (TimeoutError, *BLEAK_RETRY_EXCEPTIONS) as err:
+                    if isinstance(err, TimeoutError):
+                        _LOGGER.debug("%s: sem resposta em %.0f s", self.name, OPERATION_TIMEOUT)
+                    await self._drop_client()
                     if attempt == 2:
                         self.available = False
                         self._notify_listeners()

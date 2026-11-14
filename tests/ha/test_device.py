@@ -158,8 +158,6 @@ class DeviceTests(unittest.TestCase):
         self.run_async(go())
 
 
-if __name__ == "__main__":
-    unittest.main()
 
     def test_marks_unavailable_and_reconnects_when_seen_again(self):
         """PC desligado: o controlador some; ao voltar a anunciar, liga e fica disponível."""
@@ -204,3 +202,35 @@ if __name__ == "__main__":
             self.assertFalse(dev.can_reconnect)                   # e espera antes de tentar outra vez
             self.assertFalse(dev.available)
         self.run_async(go())
+
+    def test_hung_write_times_out_and_releases_the_lock(self):
+        """Uma escrita que nunca responde não pode prender o dispositivo para sempre."""
+        self.mod.OPERATION_TIMEOUT = 0.05
+        self.mod.DISCONNECT_TIMEOUT = 0.05
+        hang = {"on": True}
+
+        def setup(c):
+            orig = c.write_gatt_char
+
+            async def write(uuid, data, response=True):
+                if hang["on"]:
+                    await asyncio.Event().wait()
+                return await orig(uuid, data, response)
+            c.write_gatt_char = write
+        self.client_setup = setup
+
+        async def go():
+            with self.assertRaises(TimeoutError):
+                await asyncio.wait_for(self.dev.set_speed(10), 5)
+            self.assertFalse(self.dev.available)
+            self.assertEqual(len(self.clients), 2)                # duas tentativas, ambas largadas
+            self.assertFalse(any(c.is_connected for c in self.clients))
+            hang["on"] = False                                    # volta a responder
+            await asyncio.wait_for(self.dev.set_speed(20), 5)     # o lock foi libertado
+            self.assertTrue(self.dev.available)
+            await self.dev.disconnect()
+        self.run_async(go())
+
+
+if __name__ == "__main__":
+    unittest.main()

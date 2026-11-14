@@ -43,7 +43,9 @@ HA, com a integração em `custom_components/sp110e`.
   liga a pedido e desliga ao fim de 60 s). Versão no `manifest.json`. Testes em `tests/ha`.
   Sem energia (PC desligado) fica indisponível (`async_track_unavailable`) e volta a ligar
   sozinho ao primeiro anúncio (`Sp110eDevice.reconnect`, no máximo a cada 15 s); a entrada
-  carrega mesmo com o controlador desligado (não usa `ConfigEntryNotReady`).
+  carrega mesmo com o controlador desligado (não usa `ConfigEntryNotReady`). A configuração nunca
+  espera pela ligação (primeira ligação em segundo plano) e cada operação Bluetooth tem tempo
+  limite (`OPERATION_TIMEOUT`): uma escrita sem resposta prendeu o arranque do HA durante dias.
 - O Bluetooth direto foi retirado da app (0.2.0): neste PC o Windows não lê os serviços GATT do
   SP110E (dois adaptadores, app e Chrome); o HA (Linux) e o iPhone leem `FFE0/FFE1` sem problemas.
 

@@ -26,22 +26,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: Sp110eConfigEntry) -> bo
     ble_device = bluetooth.async_ble_device_from_address(hass, address, connectable=True)
     device = Sp110eDevice(ble_device, entry.data.get(CONF_NAME) or entry.title, address)
 
-    # Primeira leitura do estado; se não estiver ligado, as entidades ficam indisponíveis
-    # até o controlador voltar a anunciar
-    online = False
-    if ble_device is not None:
-        try:
-            await device.update()
-            online = True
-        except Exception as err:  # noqa: BLE001
-            await device.disconnect()
-            _LOGGER.info("%s: sem ligação no arranque (%s); a aguardar que volte a anunciar", device.name, err)
-    else:
+    # A primeira ligação é feita em segundo plano: a configuração termina logo (a luz
+    # aparece indisponível até ligar), para um controlador que não responde nunca
+    # prender o arranque do Home Assistant.
+    if ble_device is None:
         _LOGGER.info("%s: não está à vista (desligado?); a aguardar que volte a anunciar", device.name)
-    if online and device.status is None:
-        _LOGGER.warning("%s: ligado, mas o controlador não enviou o estado; a usar valores por omissão", device.name)
     device.ensure_status()
-    device.available = online
+    device.available = False
 
     # O SP110E costuma ser alimentado pelo USB do PC: desliga com ele e volta a anunciar
     # quando o PC liga. Em vez de deixar a entrada falhar (e o HA espaçar as tentativas),
@@ -82,6 +73,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: Sp110eConfigEntry) -> bo
 
     entry.runtime_data = device
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if ble_device is not None:
+        entry.async_create_background_task(hass, device.reconnect(), f"sp110e connect {address}")
     return True
 
 

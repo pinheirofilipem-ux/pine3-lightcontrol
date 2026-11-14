@@ -159,7 +159,7 @@ async def test_setup_entities_and_services(hass: HomeAssistant) -> None:
         patch("custom_components.sp110e.device.WRITE_GAP", 0),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
 
         state = hass.states.get("light.sp110e_1e_b5")
         assert state is not None, [s.entity_id for s in hass.states.async_all()]
@@ -223,7 +223,7 @@ async def test_setup_without_state_still_creates_light(hass: HomeAssistant) -> N
             patch("custom_components.sp110e.device.STATUS_TIMEOUT", 0.05),
         ):
             assert await hass.config_entries.async_setup(entry.entry_id)
-            await hass.async_block_till_done()
+            await hass.async_block_till_done(wait_background_tasks=True)
             state = hass.states.get("light.sp110e_1e_b5")
             assert state is not None and state.state == STATE_OFF
             await hass.services.async_call("light", "turn_on", {"entity_id": "light.sp110e_1e_b5"}, blocking=True)
@@ -264,12 +264,12 @@ async def test_comes_back_when_seen_again(hass: HomeAssistant) -> None:
         patch("custom_components.sp110e.device.RECONNECT_MIN_INTERVAL", 0),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
         assert hass.states.get("light.sp110e_1e_b5").state == STATE_UNAVAILABLE
         assert not FakeClient.instances
 
         seen[0](INFO, BluetoothChange.ADVERTISEMENT)          # o PC ligou: voltou a anunciar
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
         state = hass.states.get("light.sp110e_1e_b5")
         assert state.state == STATE_ON
         assert tuple(state.attributes["rgb_color"]) == (255, 0, 0)
@@ -280,6 +280,35 @@ async def test_comes_back_when_seen_again(hass: HomeAssistant) -> None:
         assert hass.states.get("light.sp110e_1e_b5").state == STATE_UNAVAILABLE
 
         seen[0](INFO, BluetoothChange.ADVERTISEMENT)
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
         assert hass.states.get("light.sp110e_1e_b5").state == STATE_ON
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_setup_does_not_wait_for_a_controller_that_never_answers(hass: HomeAssistant) -> None:
+    """O arranque do HA ficou dias à espera da integração ("Waiting for integrations to
+    complete setup"): uma ligação que nunca responde não pode prender a configuração."""
+    import asyncio
+    from homeassistant.config_entries import ConfigEntryState
+    from homeassistant.const import STATE_UNAVAILABLE
+
+    async def _hang(*_args, **_kwargs):
+        await asyncio.Event().wait()
+
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=ADDRESS, title="SP110E 1E:B5",
+                            data={CONF_ADDRESS: ADDRESS, "name": "SP110E"})
+    entry.add_to_hass(hass)
+    with (
+        patch("custom_components.sp110e.bluetooth.async_ble_device_from_address", return_value=DEVICE),
+        patch("custom_components.sp110e.device.establish_connection", _hang),
+        patch("custom_components.sp110e.device.OPERATION_TIMEOUT", 0.05),
+    ):
+        async with asyncio.timeout(5):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+        assert entry.state is ConfigEntryState.LOADED
+        assert hass.states.get("light.sp110e_1e_b5").state == STATE_UNAVAILABLE
+        async with asyncio.timeout(5):                          # a tentativa em segundo plano acaba
+            await hass.async_block_till_done(wait_background_tasks=True)
+        assert hass.states.get("light.sp110e_1e_b5").state == STATE_UNAVAILABLE
         assert await hass.config_entries.async_unload(entry.entry_id)
